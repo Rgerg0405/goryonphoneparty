@@ -14,7 +14,163 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      game_entries: {
+        Row: {
+          chain_index: number
+          content: string
+          created_at: string
+          entry_type: string
+          id: string
+          party_id: string
+          player_id: string
+          player_name: string
+          session_number: number
+          step: number
+        }
+        Insert: {
+          chain_index: number
+          content: string
+          created_at?: string
+          entry_type: string
+          id?: string
+          party_id: string
+          player_id: string
+          player_name: string
+          session_number?: number
+          step: number
+        }
+        Update: {
+          chain_index?: number
+          content?: string
+          created_at?: string
+          entry_type?: string
+          id?: string
+          party_id?: string
+          player_id?: string
+          player_name?: string
+          session_number?: number
+          step?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_entries_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      game_reactions: {
+        Row: {
+          comment: string | null
+          created_at: string
+          entry_id: string | null
+          id: string
+          party_id: string
+          player_id: string
+          reaction_type: string
+          session_number: number
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          entry_id?: string | null
+          id?: string
+          party_id: string
+          player_id: string
+          reaction_type: string
+          session_number: number
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          entry_id?: string | null
+          id?: string
+          party_id?: string
+          player_id?: string
+          reaction_type?: string
+          session_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_reactions_entry_id_fkey"
+            columns: ["entry_id"]
+            isOneToOne: false
+            referencedRelation: "game_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "game_reactions_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      parties: {
+        Row: {
+          code: string
+          created_at: string
+          host_id: string
+          id: string
+          settings: Json
+          status: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          host_id: string
+          id?: string
+          settings?: Json
+          status?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          host_id?: string
+          id?: string
+          settings?: Json
+          status?: string
+        }
+        Relationships: []
+      }
+      party_players: {
+        Row: {
+          avatar: string
+          id: string
+          joined_at: string
+          party_id: string
+          player_id: string
+          username: string
+        }
+        Insert: {
+          avatar?: string
+          id?: string
+          joined_at?: string
+          party_id: string
+          player_id: string
+          username: string
+        }
+        Update: {
+          avatar?: string
+          id?: string
+          joined_at?: string
+          party_id?: string
+          player_id?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "party_players_party_id_fkey"
+            columns: ["party_id"]
+            isOneToOne: false
+            referencedRelation: "parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
