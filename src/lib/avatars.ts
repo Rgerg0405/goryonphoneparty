@@ -1,0 +1,32 @@
+import goryonLogo from '@/assets/goryonlogo.jpg';
+import chico from '@/assets/avatars/chico.jpg';
+import cat from '@/assets/avatars/cat.png';
+import patrik from '@/assets/avatars/patrik.jpg';
+
+export interface AvatarOption {
+  id: string;
+  src: string;
+  name: string;
+}
+
+export const AVATARS: AvatarOption[] = [
+  { id: 'goryon', src: goryonLogo, name: 'GoryON' },
+  { id: 'chico', src: chico, name: 'Chico' },
+  { id: 'cat', src: cat, name: 'Macska' },
+  { id: 'patrik', src: patrik, name: 'Patrik' },
+  { id: 'alien', src: '', name: '👽' },
+  { id: 'robot', src: '', name: '🤖' },
+  { id: 'ghost', src: '', name: '👻' },
+  { id: 'clown', src: '', name: '🤡' },
+  { id: 'skull', src: '', name: '💀' },
+  { id: 'dragon', src: '', name: '🐉' },
+  { id: 'fire', src: '', name: '🔥' },
+  { id: 'star', src: '', name: '⭐' },
+];
+
+export function getAvatarDisplay(avatarId: string): { src?: string; emoji?: string } {
+  const av = AVATARS.find(a => a.id === avatarId);
+  if (!av) return { emoji: '👤' };
+  if (av.src) return { src: av.src };
+  return { emoji: av.name };
+}
