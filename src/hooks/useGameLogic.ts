@@ -287,19 +287,21 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
           currentContent: null, // Will load from DB
         });
 
-        // Load assignment from DB
+        // Load assignment from DB with retry
         if (payload.step > 0) {
-          supabase
-            .from('game_entries')
-            .select('content')
-            .eq('party_id', payload.partyId)
-            .eq('session_number', payload.sessionNumber)
-            .eq('chain_index', chainIndex)
-            .eq('step', payload.step - 1)
-            .maybeSingle()
-            .then(({ data }) => {
-              if (mounted) updateGame({ currentContent: data?.content || null });
-            });
+          (async () => {
+            const entry = await fetchWithRetry(() =>
+              supabase
+                .from('game_entries')
+                .select('content')
+                .eq('party_id', payload.partyId)
+                .eq('session_number', payload.sessionNumber)
+                .eq('chain_index', chainIndex)
+                .eq('step', payload.step - 1)
+                .maybeSingle()
+            );
+            if (mounted) updateGame({ currentContent: entry?.content || null });
+          })();
         }
 
         if (payload.timeRemaining > 0) {
@@ -340,19 +342,27 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       });
 
       channel.on('broadcast', { event: 'album:start' }, ({ payload }) => {
-        supabase
-          .from('game_entries')
-          .select('*')
-          .eq('party_id', gameRef.current.partyId)
-          .eq('session_number', payload.sessionNumber)
-          .order('chain_index')
-          .order('step')
-          .then(({ data }) => {
-            if (mounted) {
-              updateGame({
-                phase: 'album',
-                albumEntries: (data || []) as unknown as GameEntry[],
-                albumSlide: { chain: 0, step: 0 },
+        (async () => {
+          // Wait a moment then fetch with retry to ensure all entries are written
+          await new Promise(r => setTimeout(r, 800));
+          const data = await fetchWithRetry(() =>
+            supabase
+              .from('game_entries')
+              .select('*')
+              .eq('party_id', gameRef.current.partyId)
+              .eq('session_number', payload.sessionNumber)
+              .order('chain_index')
+              .order('step'),
+            5, 800
+          );
+          if (mounted) {
+            updateGame({
+              phase: 'album',
+              albumEntries: (data || []) as unknown as GameEntry[],
+              albumSlide: { chain: 0, step: 0 },
+            });
+          }
+        })();
               });
             }
           });
