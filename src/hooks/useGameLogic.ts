@@ -4,6 +4,14 @@ import {
   Player, GameSettings, GameEntry, GamePhase, Reaction,
   DEFAULT_SETTINGS, getBlankCanvas, speakHungarian,
 } from '@/lib/gameTypes';
+import {
+  dedupeGameEntries,
+  getAssignedChainIndex,
+  getPhaseFallbackContent,
+  getSlideEntry,
+  hasCompleteAlbum,
+  hasCompleteEntriesForStep,
+} from '@/lib/gameFlow';
 import { playClick, playSubmit, playNotification, playTimerWarning, playPop, playSlideChange } from '@/lib/sounds';
 import { toast } from '@/hooks/use-toast';
 
@@ -80,6 +88,86 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     setGame({ ...gameRef.current });
   }, []);
 
+  const loadAssignmentContent = useCallback(async (
+    partyId: string,
+    sessionNumber: number,
+    chainIndex: number,
+    step: number,
+    phase: GamePhase,
+  ) => {
+    const entry = await fetchWithRetry(async () => {
+      const { data, error } = await supabase
+        .from('game_entries')
+        .select('*')
+        .eq('party_id', partyId)
+        .eq('session_number', sessionNumber)
+        .eq('chain_index', chainIndex)
+        .eq('step', step)
+        .order('created_at', { ascending: false });
+
+      if (error) return { data: null, error };
+      const picked = dedupeGameEntries((data || []) as unknown as GameEntry[]).find(
+        (item) => item.chain_index === chainIndex && item.step === step,
+      );
+      return { data: picked ?? null, error: null };
+    }, 10, 350);
+
+    return entry?.content ?? getPhaseFallbackContent(phase);
+  }, []);
+
+  const waitForStepEntries = useCallback(async (
+    partyId: string,
+    sessionNumber: number,
+    step: number,
+    expectedCount: number,
+  ) => {
+    const data = await fetchWithRetry(async () => {
+      const { data, error } = await supabase
+        .from('game_entries')
+        .select('*')
+        .eq('party_id', partyId)
+        .eq('session_number', sessionNumber)
+        .eq('step', step)
+        .order('created_at', { ascending: false });
+
+      if (error) return { data: null, error };
+      const deduped = dedupeGameEntries((data || []) as unknown as GameEntry[]);
+      return {
+        data: hasCompleteEntriesForStep(deduped, step, expectedCount) ? deduped : null,
+        error: null,
+      };
+    }, 12, 350);
+
+    return (data || []) as unknown as GameEntry[];
+  }, []);
+
+  const waitForAlbumEntries = useCallback(async (
+    partyId: string,
+    sessionNumber: number,
+    totalSteps: number,
+    playerCount: number,
+  ) => {
+    const data = await fetchWithRetry(async () => {
+      const { data, error } = await supabase
+        .from('game_entries')
+        .select('*')
+        .eq('party_id', partyId)
+        .eq('session_number', sessionNumber)
+        .order('chain_index')
+        .order('step')
+        .order('created_at', { ascending: false });
+
+      if (error) return { data: null, error };
+      const deduped = dedupeGameEntries((data || []) as unknown as GameEntry[]);
+      return {
+        data: hasCompleteAlbum(deduped, totalSteps, playerCount) ? deduped : null,
+        error: null,
+      };
+    }, 14, 450);
+
+    return (data || []) as unknown as GameEntry[];
+  }, []);
+
   const refreshPlayers = useCallback(async (pid: string) => {
     const { data } = await supabase
       .from('party_players')
@@ -120,22 +208,16 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     const g = gameRef.current;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
+    await waitForStepEntries(g.partyId, g.sessionNumber, g.step, g.playerOrder.length);
+
     const nextStep = g.step + 1;
 
     if (nextStep >= g.totalSteps) {
       // Game over → album
       await supabase.from('parties').update({ status: 'album' }).eq('id', g.partyId);
 
-      const data = await fetchWithRetry(() =>
-        supabase
-          .from('game_entries')
-          .select('*')
-          .eq('party_id', g.partyId)
-          .eq('session_number', g.sessionNumber)
-          .order('chain_index')
-          .order('step'),
-        5, 500
-      );
+      const data = await waitForAlbumEntries(g.partyId, g.sessionNumber, g.totalSteps, g.playerOrder.length);
+      const albumEntries = dedupeGameEntries((data || []) as unknown as GameEntry[]);
 
       channelRef.current?.send({
         type: 'broadcast',
@@ -145,9 +227,14 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
       updateGame({
         phase: 'album',
-        albumEntries: (data || []) as unknown as GameEntry[],
+        albumEntries,
         albumSlide: { chain: 0, step: 0 },
       });
+
+      const firstSlide = getSlideEntry(albumEntries, 0, 0);
+      if (firstSlide?.entry_type === 'text') {
+        speakHungarian(firstSlide.content);
+      }
 
       playNotification();
       return;
@@ -172,27 +259,19 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
     submissionsRef.current = new Set();
 
-    const myIndex = g.playerOrder.indexOf(playerId);
-    const N = g.playerOrder.length;
-    const chainIndex = ((myIndex - nextStep) % N + N) % N;
-
-    // Load my assignment from DB with retry
-    const prevEntry = await fetchWithRetry(() =>
-      supabase
-        .from('game_entries')
-        .select('content')
-        .eq('party_id', g.partyId)
-        .eq('session_number', g.sessionNumber)
-        .eq('chain_index', chainIndex)
-        .eq('step', nextStep - 1)
-        .maybeSingle(),
-      5, 500
+    const chainIndex = getAssignedChainIndex(g.playerOrder, playerId, nextStep);
+    const currentContent = await loadAssignmentContent(
+      g.partyId,
+      g.sessionNumber,
+      chainIndex,
+      nextStep - 1,
+      nextPhase,
     );
 
     updateGame({
       phase: nextPhase,
       step: nextStep,
-      currentContent: prevEntry?.content || null,
+      currentContent,
       myChainIndex: chainIndex,
       hasSubmitted: false,
       submittedCount: 0,
@@ -201,7 +280,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
     if (timeForPhase > 0) startTimer(timeForPhase);
     playNotification();
-  }, [playerId, updateGame, startTimer]);
+  }, [loadAssignmentContent, playerId, startTimer, updateGame, waitForAlbumEntries, waitForStepEntries]);
 
   const handleTimerExpired = useCallback(async () => {
     const g = gameRef.current;
@@ -270,9 +349,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         submissionsRef.current = new Set();
 
-        const myIndex = payload.playerOrder.indexOf(playerId);
-        const N = payload.playerOrder.length;
-        const chainIndex = ((myIndex - payload.step) % N + N) % N;
+        const chainIndex = getAssignedChainIndex(payload.playerOrder, playerId, payload.step);
 
         updateGame({
           phase: payload.phase,
@@ -290,17 +367,14 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
         // Load assignment from DB with retry
         if (payload.step > 0) {
           (async () => {
-            const entry = await fetchWithRetry(() =>
-              supabase
-                .from('game_entries')
-                .select('content')
-                .eq('party_id', payload.partyId)
-                .eq('session_number', payload.sessionNumber)
-                .eq('chain_index', chainIndex)
-                .eq('step', payload.step - 1)
-                .maybeSingle()
+            const content = await loadAssignmentContent(
+              payload.partyId,
+              payload.sessionNumber,
+              chainIndex,
+              payload.step - 1,
+              payload.phase,
             );
-            if (mounted) updateGame({ currentContent: entry?.content || null });
+            if (mounted) updateGame({ currentContent: content });
           })();
         }
 
@@ -343,24 +417,24 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
       channel.on('broadcast', { event: 'album:start' }, ({ payload }) => {
         (async () => {
-          // Wait a moment then fetch with retry to ensure all entries are written
-          await new Promise(r => setTimeout(r, 800));
-          const data = await fetchWithRetry(() =>
-            supabase
-              .from('game_entries')
-              .select('*')
-              .eq('party_id', gameRef.current.partyId)
-              .eq('session_number', payload.sessionNumber)
-              .order('chain_index')
-              .order('step'),
-            5, 800
+          const data = await waitForAlbumEntries(
+            gameRef.current.partyId,
+            payload.sessionNumber,
+            gameRef.current.totalSteps,
+            gameRef.current.playerOrder.length,
           );
+          const albumEntries = dedupeGameEntries((data || []) as unknown as GameEntry[]);
           if (mounted) {
             updateGame({
               phase: 'album',
-              albumEntries: (data || []) as unknown as GameEntry[],
+              albumEntries,
               albumSlide: { chain: 0, step: 0 },
             });
+
+            const firstSlide = getSlideEntry(albumEntries, 0, 0);
+            if (firstSlide?.entry_type === 'text') {
+              speakHungarian(firstSlide.content);
+            }
           }
         })();
         playNotification();
@@ -370,9 +444,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
         updateGame({ albumSlide: payload });
         playSlideChange();
         // TTS
-        const entry = gameRef.current.albumEntries.find(
-          (e) => e.chain_index === payload.chain && e.step === payload.step
-        );
+        const entry = getSlideEntry(gameRef.current.albumEntries, payload.chain, payload.step);
         if (entry?.entry_type === 'text') {
           speakHungarian(entry.content);
         }
@@ -443,7 +515,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [code, playerId, username, avatar]);
+  }, [avatar, code, loadAssignmentContent, playerId, refreshPlayers, updateGame, username, waitForAlbumEntries]);
 
   // Actions
   const startGame = useCallback(async () => {
@@ -492,9 +564,13 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
   const submitEntry = useCallback(async (content: string) => {
     const g = gameRef.current;
+    if (g.hasSubmitted) return;
+
     const entryType = g.step % 2 === 0 ? 'text' : 'drawing';
 
-    await supabase.from('game_entries').insert({
+    updateGame({ hasSubmitted: true });
+
+    const { error } = await supabase.from('game_entries').insert({
       party_id: g.partyId,
       session_number: g.sessionNumber,
       chain_index: g.myChainIndex,
@@ -505,6 +581,12 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       content,
     });
 
+    if (error) {
+      updateGame({ hasSubmitted: false });
+      toast({ title: 'Hiba', description: 'A beküldés nem sikerült, próbáld újra.' });
+      return;
+    }
+
     channelRef.current?.send({
       type: 'broadcast',
       event: 'player:submit',
@@ -514,7 +596,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     if (g.isHost) {
       submissionsRef.current.add(playerId);
       const count = submissionsRef.current.size;
-      updateGame({ hasSubmitted: true, submittedCount: count });
+      updateGame({ submittedCount: count });
       if (count >= g.playerOrder.length) {
         await advanceStep();
       }
@@ -523,7 +605,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     }
 
     playSubmit();
-  }, [playerId, username, updateGame, advanceStep]);
+  }, [advanceStep, playerId, updateGame, username]);
 
   const updateSettings = useCallback(async (newSettings: Partial<GameSettings>) => {
     const updated = { ...gameRef.current.settings, ...newSettings };
@@ -559,9 +641,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       payload: { chain: newChain, step: newStep },
     });
 
-    const entry = g.albumEntries.find(
-      (e) => e.chain_index === newChain && e.step === newStep
-    );
+    const entry = getSlideEntry(g.albumEntries, newChain, newStep);
     if (entry?.entry_type === 'text') speakHungarian(entry.content);
     playSlideChange();
   }, [updateGame]);
@@ -586,6 +666,9 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       event: 'album:slide',
       payload: { chain: newChain, step: newStep },
     });
+
+    const entry = getSlideEntry(g.albumEntries, newChain, newStep);
+    if (entry?.entry_type === 'text') speakHungarian(entry.content);
     playSlideChange();
   }, [updateGame]);
 

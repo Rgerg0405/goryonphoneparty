@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { playClick } from '@/lib/sounds';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-type Tool = 'brush' | 'eraser' | 'fill' | 'line' | 'rect' | 'circle';
+type Tool = 'brush' | 'eraser' | 'fill' | 'line' | 'rect' | 'circle' | 'eyebrow' | 'fur';
 
 const COLORS = [
   '#000000', '#808080', '#C0C0C0', '#FFFFFF',
@@ -13,9 +14,36 @@ const COLORS = [
   '#000080', '#400080', '#800080', '#800040',
 ];
 
-const BRUSH_SIZES = [2, 5, 10, 20, 35];
-const CANVAS_W = 800;
-const CANVAS_H = 500;
+const BRUSH_SIZES = [1, 2, 4, 8, 14, 22, 32];
+const DISPLAY_W = 800;
+const DISPLAY_H = 500;
+const CANVAS_W = 1600;
+const CANVAS_H = 1000;
+
+const TOOL_BUTTONS: { id: Tool; icon: string; label: string }[] = [
+  { id: 'brush', icon: '✏️', label: 'Ecset' },
+  { id: 'eraser', icon: '🧹', label: 'Radír' },
+  { id: 'fill', icon: '🪣', label: 'Kitöltés' },
+  { id: 'line', icon: '📏', label: 'Vonal' },
+  { id: 'rect', icon: '⬜', label: 'Téglalap' },
+  { id: 'circle', icon: '⭕', label: 'Kör' },
+  { id: 'eyebrow', icon: '🪶', label: 'Szemöldök' },
+  { id: 'fur', icon: '🐾', label: 'Szőrzet' },
+];
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+function drawSmoothStroke(ctx: CanvasRenderingContext2D, from: Point, to: Point) {
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.quadraticCurveTo(from.x, from.y, midX, midY);
+  ctx.stroke();
+}
 
 interface Props {
   onSubmit: (dataUrl: string) => void;
@@ -27,10 +55,12 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [tool, setTool] = useState<Tool>('brush');
   const [color, setColor] = useState('#000000');
-  const [brushSize, setBrushSize] = useState(5);
+  const [brushSize, setBrushSize] = useState(4);
+  const [zoom, setZoom] = useState(1);
   const [isDrawing, setIsDrawing] = useState(false);
   const [undoStack, setUndoStack] = useState<ImageData[]>([]);
   const startPos = useRef({ x: 0, y: 0 });
+  const lastPos = useRef<Point | null>(null);
   const savedImageData = useRef<ImageData | null>(null);
 
   useEffect(() => {
@@ -39,6 +69,7 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.imageSmoothingEnabled = true;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
   }, []);
@@ -47,7 +78,7 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    setUndoStack(prev => [...prev.slice(-20), ctx.getImageData(0, 0, CANVAS_W, CANVAS_H)]);
+    setUndoStack(prev => [...prev.slice(-11), ctx.getImageData(0, 0, CANVAS_W, CANVAS_H)]);
   }, []);
 
   const undo = useCallback(() => {
@@ -69,6 +100,60 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     playClick();
   }, [saveState]);
+
+  const prepareStroke = useCallback((ctx: CanvasRenderingContext2D, activeTool: Tool) => {
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = activeTool === 'eraser' ? '#FFFFFF' : color;
+    ctx.fillStyle = activeTool === 'eraser' ? '#FFFFFF' : color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    switch (activeTool) {
+      case 'eraser':
+        ctx.lineWidth = brushSize * 3;
+        break;
+      case 'eyebrow':
+        ctx.lineWidth = Math.max(1, brushSize * 0.6);
+        ctx.globalAlpha = 0.8;
+        break;
+      case 'fur':
+        ctx.lineWidth = Math.max(1, brushSize * 0.35);
+        ctx.globalAlpha = 0.9;
+        break;
+      default:
+        ctx.lineWidth = brushSize;
+    }
+  }, [brushSize, color]);
+
+  const paintSegment = useCallback((ctx: CanvasRenderingContext2D, from: Point, to: Point) => {
+    prepareStroke(ctx, tool);
+
+    if (tool === 'fur') {
+      const hairs = Math.max(4, Math.round(brushSize * 1.4));
+      for (let i = 0; i < hairs; i++) {
+        const offsetX = (Math.random() - 0.5) * brushSize * 2.2;
+        const offsetY = (Math.random() - 0.5) * brushSize * 2.2;
+        const hairEndX = to.x + offsetX;
+        const hairEndY = to.y + offsetY;
+        ctx.beginPath();
+        ctx.moveTo(from.x + offsetX * 0.2, from.y + offsetY * 0.2);
+        ctx.lineTo(hairEndX, hairEndY);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    if (tool === 'eyebrow') {
+      drawSmoothStroke(ctx, from, to);
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = Math.max(1, brushSize * 0.3);
+      drawSmoothStroke(ctx, { x: from.x + 1.5, y: from.y + 0.5 }, { x: to.x + 1.5, y: to.y + 0.5 });
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    drawSmoothStroke(ctx, from, to);
+  }, [brushSize, prepareStroke, tool]);
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current!;
@@ -140,14 +225,8 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
       return;
     }
 
-    ctx.strokeStyle = tool === 'eraser' ? '#FFFFFF' : color;
-    ctx.lineWidth = tool === 'eraser' ? brushSize * 3 : brushSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.lineTo(pos.x + 0.1, pos.y + 0.1);
-    ctx.stroke();
+    lastPos.current = pos;
+    paintSegment(ctx, pos, { x: pos.x + 0.1, y: pos.y + 0.1 });
     setIsDrawing(true);
   };
 
@@ -180,39 +259,37 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
       return;
     }
 
-    ctx.strokeStyle = tool === 'eraser' ? '#FFFFFF' : color;
-    ctx.lineWidth = tool === 'eraser' ? brushSize * 3 : brushSize;
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
+    if (lastPos.current) {
+      paintSegment(ctx, lastPos.current, pos);
+    }
+    lastPos.current = pos;
   };
 
   const handleEnd = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
     savedImageData.current = null;
+    lastPos.current = null;
   };
 
   const handleSubmit = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    onSubmit(canvas.toDataURL('image/jpeg', 0.7));
+    onSubmit(canvas.toDataURL('image/jpeg', 0.92));
   };
 
-  const toolButtons: { id: Tool; icon: string; label: string }[] = [
-    { id: 'brush', icon: '✏️', label: 'Ecset' },
-    { id: 'eraser', icon: '🧹', label: 'Radír' },
-    { id: 'fill', icon: '🪣', label: 'Kitöltés' },
-    { id: 'line', icon: '📏', label: 'Vonal' },
-    { id: 'rect', icon: '⬜', label: 'Téglalap' },
-    { id: 'circle', icon: '⭕', label: 'Kör' },
-  ];
+  const selectedTool = TOOL_BUTTONS.find((item) => item.id === tool) ?? TOOL_BUTTONS[0];
 
   return (
-    <div className="flex flex-col items-center gap-2 w-full">
-      <div className="flex gap-2 w-full max-w-[850px]">
-        {/* Color palette */}
-        <div className="flex flex-col gap-1 flex-shrink-0">
-          <div className="grid grid-cols-4 gap-0.5">
+    <div className="flex flex-col items-center gap-3 w-full">
+      <div className="grid w-full max-w-[1120px] gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="game-card space-y-4 p-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-sm">Színpaletta</span>
+              <span className="text-xs text-muted-foreground">{color.toUpperCase()}</span>
+            </div>
+            <div className="grid grid-cols-6 gap-1.5">
             {COLORS.map((c) => (
               <button
                 key={c}
@@ -220,75 +297,175 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
                   c === color ? 'border-foreground scale-110' : 'border-border/40'
                 }`}
                 style={{ backgroundColor: c }}
+                type="button"
                 onClick={() => { setColor(c); playClick(); }}
               />
             ))}
+            </div>
+
+            <div className="mt-3">
+              <label className="text-sm font-bold mb-1 block">Összes szín</label>
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-11 w-full cursor-pointer rounded-lg border border-border bg-card p-1"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-sm">Tool katalógus</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" className="game-btn text-sm py-2 px-3">
+                    🧰 Több tool
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80">
+                  <div className="grid grid-cols-2 gap-2">
+                    {TOOL_BUTTONS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`game-btn text-sm py-2 px-3 justify-start ${tool === item.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
+                        onClick={() => { setTool(item.id); playClick(); }}
+                      >
+                        {item.icon} {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card/60 p-3">
+              <div className="font-bold">{selectedTool.icon} {selectedTool.label}</div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {tool === 'eyebrow'
+                  ? 'Finom, vékony, rétegezhető húzások részletekhez.'
+                  : tool === 'fur'
+                    ? 'Több apró szálat rajzol egyszerre szőrökhöz és textúrához.'
+                    : 'Smooth, nagy felbontású rajzolás pontosabb vonalakkal.'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-sm">Zoom</span>
+              <span className="text-sm text-primary font-bold">{Math.round(zoom * 100)}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" className="game-btn px-3 py-2" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))}>
+                −
+              </button>
+              <input
+                type="range"
+                min={0.75}
+                max={3}
+                step={0.05}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="flex-1"
+              />
+              <button type="button" className="game-btn px-3 py-2" onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}>
+                +
+              </button>
+            </div>
+            <button type="button" className="mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors" onClick={() => setZoom(1)}>
+              Vissza 100%-ra
+            </button>
           </div>
         </div>
 
-        {/* Canvas */}
-        <div className={`relative flex-1 border-2 border-border rounded-lg overflow-hidden bg-white ${isSecret ? 'blur-md' : ''}`}>
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_W}
-            height={CANVAS_H}
-            className="w-full h-auto cursor-crosshair touch-none"
-            onMouseDown={handleStart}
-            onMouseMove={handleMove}
-            onMouseUp={handleEnd}
-            onMouseLeave={handleEnd}
-            onTouchStart={handleStart}
-            onTouchMove={handleMove}
-            onTouchEnd={handleEnd}
-          />
+        <div className="game-card p-3">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {TOOL_BUTTONS.slice(0, 4).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`game-btn text-sm py-2 px-3 ${tool === t.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
+                onClick={() => { setTool(t.id); playClick(); }}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+
+            <div className="h-8 w-px bg-border mx-1" />
+
+            {BRUSH_SIZES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                  brushSize === s ? 'border-primary bg-primary/20' : 'border-border bg-card'
+                }`}
+                onClick={() => { setBrushSize(s); playClick(); }}
+              >
+                <div
+                  className="rounded-full bg-foreground"
+                  style={{ width: Math.min(s + 2, 20), height: Math.min(s + 2, 20) }}
+                />
+              </button>
+            ))}
+          </div>
+
+          <div className="overflow-auto rounded-xl border border-border bg-card/50 scroll-smooth max-h-[72vh]">
+            <div className="min-w-max p-2">
+              <div
+                className={`relative overflow-hidden rounded-lg bg-card ${isSecret ? 'blur-md' : ''}`}
+                style={{
+                  width: `${DISPLAY_W * zoom}px`,
+                  height: `${DISPLAY_H * zoom}px`,
+                  transition: 'width 180ms ease, height 180ms ease',
+                }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  width={CANVAS_W}
+                  height={CANVAS_H}
+                  className="w-full h-full cursor-crosshair touch-none"
+                  onMouseDown={handleStart}
+                  onMouseMove={handleMove}
+                  onMouseUp={handleEnd}
+                  onMouseLeave={handleEnd}
+                  onTouchStart={handleStart}
+                  onTouchMove={handleMove}
+                  onTouchEnd={handleEnd}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-center mt-3">
+            {TOOL_BUTTONS.slice(4).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`game-btn text-sm py-2 px-3 ${tool === t.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
+                onClick={() => { setTool(t.id); playClick(); }}
+                title={t.label}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+
+            <div className="h-8 w-px bg-border mx-1" />
+
+            <button className="game-btn bg-card text-sm py-2 px-3" onClick={undo} disabled={undoStack.length === 0}>
+              ↩️ Vissza
+            </button>
+            <button className="game-btn bg-card text-sm py-2 px-3" onClick={clearCanvas}>
+              🗑️ Törlés
+            </button>
+
+            <button className="game-btn-primary text-sm py-2 px-4" onClick={handleSubmit} disabled={disabled}>
+              ✅ KÉSZ!
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Tools bar */}
-      <div className="flex items-center gap-2 flex-wrap justify-center">
-        {toolButtons.map((t) => (
-          <button
-            key={t.id}
-            className={`game-btn text-sm py-2 px-3 ${
-              tool === t.id ? 'bg-primary text-primary-foreground' : 'bg-card'
-            }`}
-            onClick={() => { setTool(t.id); playClick(); }}
-            title={t.label}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-
-        <div className="h-8 w-px bg-border mx-1" />
-
-        {/* Brush sizes */}
-        {BRUSH_SIZES.map((s) => (
-          <button
-            key={s}
-            className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all ${
-              brushSize === s ? 'border-primary bg-primary/20' : 'border-border bg-card'
-            }`}
-            onClick={() => { setBrushSize(s); playClick(); }}
-          >
-            <div
-              className="rounded-full bg-foreground"
-              style={{ width: Math.min(s, 20), height: Math.min(s, 20) }}
-            />
-          </button>
-        ))}
-
-        <div className="h-8 w-px bg-border mx-1" />
-
-        <button className="game-btn bg-card text-sm py-2 px-3" onClick={undo} disabled={undoStack.length === 0}>
-          ↩️ Vissza
-        </button>
-        <button className="game-btn bg-card text-sm py-2 px-3" onClick={clearCanvas}>
-          🗑️ Törlés
-        </button>
-
-        <button className="game-btn-primary text-sm py-2 px-4" onClick={handleSubmit} disabled={disabled}>
-          ✅ KÉSZ!
-        </button>
       </div>
     </div>
   );
