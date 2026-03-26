@@ -363,9 +363,6 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
             });
           }
         })();
-              });
-            }
-          });
         playNotification();
       });
 
