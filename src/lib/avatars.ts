@@ -2,6 +2,10 @@ import goryonLogo from '@/assets/goryonlogo.jpg';
 import chico from '@/assets/avatars/chico.jpg';
 import cat from '@/assets/avatars/cat.png';
 import patrik from '@/assets/avatars/patrik.jpg';
+import judy from '@/assets/avatars/judy.jpg';
+import anime from '@/assets/avatars/anime.jpg';
+import spongebob from '@/assets/avatars/spongebob.jpg';
+import goryonfejmc from '@/assets/avatars/goryonfejmc.png';
 
 export interface AvatarOption {
   id: string;
@@ -14,6 +18,10 @@ export const AVATARS: AvatarOption[] = [
   { id: 'chico', src: chico, name: 'Chico' },
   { id: 'cat', src: cat, name: 'Macska' },
   { id: 'patrik', src: patrik, name: 'Patrik' },
+  { id: 'judy', src: judy, name: 'Judy' },
+  { id: 'anime', src: anime, name: 'Anime' },
+  { id: 'spongebob', src: spongebob, name: 'SpongeBob' },
+  { id: 'goryonfejmc', src: goryonfejmc, name: 'GoryON MC' },
   { id: 'alien', src: '', name: '👽' },
   { id: 'robot', src: '', name: '🤖' },
   { id: 'ghost', src: '', name: '👻' },
