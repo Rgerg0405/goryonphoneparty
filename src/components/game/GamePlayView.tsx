@@ -1,7 +1,23 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { GamePhase, getPhaseLabel } from '@/lib/gameTypes';
 import DrawingCanvas from './DrawingCanvas';
 import { playClick } from '@/lib/sounds';
+
+const GORYON_VIDEOS = [
+  { id: 'BjjcJW7NxgE', start: 162 },
+  { id: 'BjjcJW7NxgE', start: 210 },
+  { id: 'BjjcJW7NxgE', start: 311 },
+  { id: 'BjjcJW7NxgE', start: 432 },
+  { id: 'BjjcJW7NxgE', start: 1141 },
+  { id: 'g-RiCGKPYb8', start: 0 },
+  { id: 'IUw6qc-2Kgo', start: 0 },
+  { id: 'ruDH5SlrcfY', start: 0 },
+  { id: 'PJAZf_2aIr4', start: 187 },
+  { id: 'TzTiuzc5I50', start: 0 },
+  { id: 've1UBtWGXdA', start: 0 },
+  { id: 've1UBtWGXdA', start: 198 },
+  { id: 'Wdldno14pBo', start: 0 },
+];
 
 interface Props {
   phase: GamePhase;
@@ -22,6 +38,10 @@ export default function GamePlayView({
   hasSubmitted, submittedCount, totalPlayers, isHost, isSecret, onSubmit,
 }: Props) {
   const [text, setText] = useState('');
+
+  const randomVideo = useMemo(() => {
+    return GORYON_VIDEOS[Math.floor(Math.random() * GORYON_VIDEOS.length)];
+  }, [hasSubmitted && phase]);
 
   const handleTextSubmit = () => {
     if (!text.trim()) return;
@@ -76,7 +96,7 @@ export default function GamePlayView({
       )}
 
       {hasSubmitted ? (
-        <div className="flex flex-col items-center gap-4 py-16">
+        <div className="flex flex-col items-center gap-4 py-8 w-full max-w-2xl">
           <span className="text-6xl animate-bounce-in">✅</span>
           <h2 className="text-2xl font-bold">Beküldve!</h2>
           <p className="text-muted-foreground">Várakozás a többi játékosra...</p>
@@ -85,6 +105,22 @@ export default function GamePlayView({
               {submittedCount}/{totalPlayers} beérkezett
             </p>
           )}
+          
+          {/* YouTube video while waiting */}
+          <div className="w-full mt-4">
+            <p className="text-center text-lg font-bold mb-2 text-primary">
+              🎬 Ameddig várakozol nézd a Mestert
+            </p>
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden border-2 border-border shadow-lg">
+              <iframe
+                src={`https://www.youtube.com/embed/${randomVideo.id}?autoplay=1&start=${randomVideo.start}&mute=0`}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="GoryON videó"
+              />
+            </div>
+          </div>
         </div>
       ) : isTextPhase ? (
         <div className="flex flex-col items-center gap-4 w-full max-w-2xl">
