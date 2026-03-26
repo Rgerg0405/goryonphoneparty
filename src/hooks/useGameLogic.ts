@@ -7,6 +7,20 @@ import {
 import { playClick, playSubmit, playNotification, playTimerWarning, playPop, playSlideChange } from '@/lib/sounds';
 import { toast } from '@/hooks/use-toast';
 
+/** Retry a query until it returns data or max attempts reached */
+async function fetchWithRetry<T>(
+  queryFn: () => Promise<{ data: T | null; error: any }>,
+  maxAttempts = 5,
+  delayMs = 600,
+): Promise<T | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const { data } = await queryFn();
+    if (data && (Array.isArray(data) ? data.length > 0 : true)) return data;
+    if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
 interface GameState {
   partyId: string;
   isHost: boolean;
