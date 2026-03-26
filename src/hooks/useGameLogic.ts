@@ -8,11 +8,11 @@ import { playClick, playSubmit, playNotification, playTimerWarning, playPop, pla
 import { toast } from '@/hooks/use-toast';
 
 /** Retry a query until it returns data or max attempts reached */
-async function fetchWithRetry<T>(
-  queryFn: () => Promise<{ data: T | null; error: any }>,
+async function fetchWithRetry(
+  queryFn: () => PromiseLike<{ data: any; error: any }>,
   maxAttempts = 5,
   delayMs = 600,
-): Promise<T | null> {
+): Promise<any> {
   for (let i = 0; i < maxAttempts; i++) {
     const { data } = await queryFn();
     if (data && (Array.isArray(data) ? data.length > 0 : true)) return data;
