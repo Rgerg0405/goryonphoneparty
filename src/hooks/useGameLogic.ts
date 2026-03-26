@@ -126,13 +126,16 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
       // Game over → album
       await supabase.from('parties').update({ status: 'album' }).eq('id', g.partyId);
 
-      const { data } = await supabase
-        .from('game_entries')
-        .select('*')
-        .eq('party_id', g.partyId)
-        .eq('session_number', g.sessionNumber)
-        .order('chain_index')
-        .order('step');
+      const data = await fetchWithRetry(() =>
+        supabase
+          .from('game_entries')
+          .select('*')
+          .eq('party_id', g.partyId)
+          .eq('session_number', g.sessionNumber)
+          .order('chain_index')
+          .order('step'),
+        5, 500
+      );
 
       channelRef.current?.send({
         type: 'broadcast',
@@ -173,15 +176,18 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     const N = g.playerOrder.length;
     const chainIndex = ((myIndex - nextStep) % N + N) % N;
 
-    // Load my assignment from DB
-    const { data: prevEntry } = await supabase
-      .from('game_entries')
-      .select('content')
-      .eq('party_id', g.partyId)
-      .eq('session_number', g.sessionNumber)
-      .eq('chain_index', chainIndex)
-      .eq('step', nextStep - 1)
-      .maybeSingle();
+    // Load my assignment from DB with retry
+    const prevEntry = await fetchWithRetry(() =>
+      supabase
+        .from('game_entries')
+        .select('content')
+        .eq('party_id', g.partyId)
+        .eq('session_number', g.sessionNumber)
+        .eq('chain_index', chainIndex)
+        .eq('step', nextStep - 1)
+        .maybeSingle(),
+      5, 500
+    );
 
     updateGame({
       phase: nextPhase,
