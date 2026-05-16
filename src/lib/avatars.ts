@@ -6,6 +6,9 @@ import judy from '@/assets/avatars/judy.jpg';
 import anime from '@/assets/avatars/anime.jpg';
 import spongebob from '@/assets/avatars/spongebob.jpg';
 import goryonfejmc from '@/assets/avatars/goryonfejmc.png';
+import shrek from '@/assets/avatars/shrek.jpg';
+import krisz from '@/assets/avatars/krisz.png';
+import orr from '@/assets/avatars/orr.png';
 
 export interface AvatarOption {
   id: string;
@@ -22,6 +25,9 @@ export const AVATARS: AvatarOption[] = [
   { id: 'anime', src: anime, name: 'Anime' },
   { id: 'spongebob', src: spongebob, name: 'SpongeBob' },
   { id: 'goryonfejmc', src: goryonfejmc, name: 'GoryON MC' },
+  { id: 'shrek', src: shrek, name: 'Shrek' },
+  { id: 'krisz', src: krisz, name: 'Krisz' },
+  { id: 'orr', src: orr, name: 'Orr' },
   { id: 'alien', src: '', name: '👽' },
   { id: 'robot', src: '', name: '🤖' },
   { id: 'ghost', src: '', name: '👻' },

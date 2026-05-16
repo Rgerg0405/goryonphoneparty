@@ -2,7 +2,12 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { playClick } from '@/lib/sounds';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-type Tool = 'brush' | 'eraser' | 'fill' | 'line' | 'rect' | 'circle' | 'eyebrow' | 'fur';
+type Tool =
+  | 'brush' | 'eraser' | 'fill' | 'line' | 'rect' | 'circle'
+  | 'triangle' | 'star' | 'arrow' | 'polygon'
+  | 'eyebrow' | 'fur' | 'spray';
+
+type FaceStamp = 'nose' | 'eye' | 'mouth' | 'mustache' | 'ear' | 'hair';
 
 const COLORS = [
   '#000000', '#808080', '#C0C0C0', '#FFFFFF',
@@ -12,9 +17,9 @@ const COLORS = [
   '#800000', '#804000', '#808000', '#408000',
   '#008000', '#008040', '#008080', '#004080',
   '#000080', '#400080', '#800080', '#800040',
+  '#FFE4C4', '#F5DEB3', '#D2B48C', '#A0522D',
 ];
 
-const BRUSH_SIZES = [1, 2, 4, 8, 14, 22, 32];
 const DISPLAY_W = 800;
 const DISPLAY_H = 500;
 const CANVAS_W = 1600;
@@ -27,22 +32,43 @@ const TOOL_BUTTONS: { id: Tool; icon: string; label: string }[] = [
   { id: 'line', icon: '📏', label: 'Vonal' },
   { id: 'rect', icon: '⬜', label: 'Téglalap' },
   { id: 'circle', icon: '⭕', label: 'Kör' },
+  { id: 'triangle', icon: '🔺', label: 'Háromszög' },
+  { id: 'star', icon: '⭐', label: 'Csillag' },
+  { id: 'arrow', icon: '➡️', label: 'Nyíl' },
+  { id: 'polygon', icon: '⬟', label: 'Sokszög' },
   { id: 'eyebrow', icon: '🪶', label: 'Szemöldök' },
   { id: 'fur', icon: '🐾', label: 'Szőrzet' },
+  { id: 'spray', icon: '💨', label: 'Spray' },
 ];
 
-interface Point {
-  x: number;
-  y: number;
+const FACE_STAMPS: { id: FaceStamp; icon: string; label: string }[] = [
+  { id: 'nose', icon: '👃', label: 'Orr' },
+  { id: 'eye', icon: '👁️', label: 'Szem' },
+  { id: 'mouth', icon: '👄', label: 'Száj' },
+  { id: 'mustache', icon: '🥸', label: 'Bajusz' },
+  { id: 'ear', icon: '👂', label: 'Fül' },
+  { id: 'hair', icon: '💇', label: 'Haj' },
+];
+
+const TEMPLATES: { id: string; label: string; icon: string }[] = [
+  { id: 'face', label: 'Arc kontúr', icon: '😶' },
+  { id: 'house', label: 'Ház', icon: '🏠' },
+  { id: 'tree', label: 'Fa', icon: '🌳' },
+  { id: 'cat', label: 'Macska', icon: '🐱' },
+];
+
+interface Point { x: number; y: number; }
+interface Layer {
+  id: string;
+  name: string;
+  visible: boolean;
+  canvas: HTMLCanvasElement;
 }
 
-function drawSmoothStroke(ctx: CanvasRenderingContext2D, from: Point, to: Point) {
-  const midX = (from.x + to.x) / 2;
-  const midY = (from.y + to.y) / 2;
-  ctx.beginPath();
-  ctx.moveTo(from.x, from.y);
-  ctx.quadraticCurveTo(from.x, from.y, midX, midY);
-  ctx.stroke();
+function makeLayer(name: string): Layer {
+  const c = document.createElement('canvas');
+  c.width = CANVAS_W; c.height = CANVAS_H;
+  return { id: crypto.randomUUID(), name, visible: true, canvas: c };
 }
 
 interface Props {
@@ -52,111 +78,305 @@ interface Props {
 }
 
 export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tool, setTool] = useState<Tool>('brush');
-  const [color, setColor] = useState('#000000');
-  const [brushSize, setBrushSize] = useState(4);
-  const [zoom, setZoom] = useState(1);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [undoStack, setUndoStack] = useState<ImageData[]>([]);
-  const startPos = useRef({ x: 0, y: 0 });
-  const lastPos = useRef<Point | null>(null);
-  const savedImageData = useRef<ImageData | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
+  const composedRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
+  const [layers, setLayers] = useState<Layer[]>(() => {
+    const bg = makeLayer('Háttér');
+    const ctx = bg.canvas.getContext('2d')!;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-    ctx.imageSmoothingEnabled = true;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    const l1 = makeLayer('Réteg 1');
+    return [bg, l1];
+  });
+  const [activeLayerId, setActiveLayerId] = useState<string>('');
+
+  const [tool, setTool] = useState<Tool>('brush');
+  const [color, setColor] = useState('#000000');
+  const [brushSize, setBrushSize] = useState(6);
+  const [zoom, setZoom] = useState(1);
+  const [symmetry, setSymmetry] = useState<'off' | 'h' | 'v' | 'both'>('off');
+  const [undoStack, setUndoStack] = useState<{ layerId: string; data: ImageData }[]>([]);
+  const [redoStack, setRedoStack] = useState<{ layerId: string; data: ImageData }[]>([]);
+  const isDrawingRef = useRef(false);
+  const startPos = useRef({ x: 0, y: 0 });
+  const lastPos = useRef<Point | null>(null);
+
+  useEffect(() => {
+    if (layers.length && !activeLayerId) setActiveLayerId(layers[layers.length - 1].id);
+  }, [layers, activeLayerId]);
+
+  const activeLayer = layers.find((l) => l.id === activeLayerId) ?? layers[layers.length - 1];
+
+  const compose = useCallback(() => {
+    const c = composedRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d')!;
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    layers.forEach((layer) => {
+      if (layer.visible) ctx.drawImage(layer.canvas, 0, 0);
+    });
+    // preview overlay
+    if (previewRef.current) ctx.drawImage(previewRef.current, 0, 0);
+  }, [layers]);
+
+  useEffect(() => { compose(); }, [compose, layers]);
+
+  useEffect(() => {
+    // init preview canvas
+    const c = document.createElement('canvas');
+    c.width = CANVAS_W; c.height = CANVAS_H;
+    (previewRef as any).current = c;
   }, []);
 
   const saveState = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
-    setUndoStack(prev => [...prev.slice(-11), ctx.getImageData(0, 0, CANVAS_W, CANVAS_H)]);
-  }, []);
+    if (!activeLayer) return;
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    setUndoStack((s) => [...s.slice(-29), { layerId: activeLayer.id, data: ctx.getImageData(0, 0, CANVAS_W, CANVAS_H) }]);
+    setRedoStack([]);
+  }, [activeLayer]);
 
   const undo = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || undoStack.length === 0) return;
-    const ctx = canvas.getContext('2d')!;
-    const prev = undoStack[undoStack.length - 1];
-    setUndoStack(s => s.slice(0, -1));
-    ctx.putImageData(prev, 0, 0);
+    setUndoStack((s) => {
+      if (s.length === 0) return s;
+      const last = s[s.length - 1];
+      const layer = layers.find((l) => l.id === last.layerId);
+      if (!layer) return s.slice(0, -1);
+      const ctx = layer.canvas.getContext('2d')!;
+      const current = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
+      setRedoStack((r) => [...r, { layerId: last.layerId, data: current }]);
+      ctx.putImageData(last.data, 0, 0);
+      compose();
+      return s.slice(0, -1);
+    });
     playClick();
-  }, [undoStack]);
+  }, [layers, compose]);
 
-  const clearCanvas = useCallback(() => {
+  const redo = useCallback(() => {
+    setRedoStack((r) => {
+      if (r.length === 0) return r;
+      const last = r[r.length - 1];
+      const layer = layers.find((l) => l.id === last.layerId);
+      if (!layer) return r.slice(0, -1);
+      const ctx = layer.canvas.getContext('2d')!;
+      const current = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
+      setUndoStack((u) => [...u, { layerId: last.layerId, data: current }]);
+      ctx.putImageData(last.data, 0, 0);
+      compose();
+      return r.slice(0, -1);
+    });
+    playClick();
+  }, [layers, compose]);
+
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
+  const clearActive = useCallback(() => {
+    if (!activeLayer) return;
     saveState();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-    playClick();
-  }, [saveState]);
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    compose();
+  }, [activeLayer, saveState, compose]);
 
-  const prepareStroke = useCallback((ctx: CanvasRenderingContext2D, activeTool: Tool) => {
+  const addLayer = () => {
+    const l = makeLayer(`Réteg ${layers.length}`);
+    setLayers((s) => [...s, l]);
+    setActiveLayerId(l.id);
+    playClick();
+  };
+  const deleteLayer = (id: string) => {
+    if (layers.length <= 1) return;
+    setLayers((s) => s.filter((l) => l.id !== id));
+    if (activeLayerId === id) setActiveLayerId(layers[0].id);
+    setTimeout(compose, 0);
+  };
+  const moveLayer = (id: string, dir: -1 | 1) => {
+    setLayers((s) => {
+      const idx = s.findIndex((l) => l.id === id);
+      if (idx < 0) return s;
+      const ni = Math.max(0, Math.min(s.length - 1, idx + dir));
+      if (ni === idx) return s;
+      const copy = s.slice();
+      const [item] = copy.splice(idx, 1);
+      copy.splice(ni, 0, item);
+      return copy;
+    });
+  };
+  const toggleLayer = (id: string) => {
+    setLayers((s) => s.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)));
+  };
+
+  // ===== draw utils =====
+  const prepareStroke = (ctx: CanvasRenderingContext2D, activeTool: Tool) => {
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = activeTool === 'eraser' ? '#FFFFFF' : color;
-    ctx.fillStyle = activeTool === 'eraser' ? '#FFFFFF' : color;
+    ctx.strokeStyle = activeTool === 'eraser' ? 'rgba(0,0,0,1)' : color;
+    ctx.fillStyle = activeTool === 'eraser' ? 'rgba(0,0,0,1)' : color;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = activeTool === 'eraser' ? 'destination-out' : 'source-over';
 
     switch (activeTool) {
-      case 'eraser':
-        ctx.lineWidth = brushSize * 3;
-        break;
-      case 'eyebrow':
-        ctx.lineWidth = Math.max(1, brushSize * 0.6);
-        ctx.globalAlpha = 0.8;
-        break;
-      case 'fur':
-        ctx.lineWidth = Math.max(1, brushSize * 0.35);
-        ctx.globalAlpha = 0.9;
-        break;
-      default:
-        ctx.lineWidth = brushSize;
+      case 'eraser': ctx.lineWidth = brushSize * 2; break;
+      case 'eyebrow': ctx.lineWidth = Math.max(1, brushSize * 0.6); ctx.globalAlpha = 0.8; break;
+      case 'fur':     ctx.lineWidth = Math.max(1, brushSize * 0.35); ctx.globalAlpha = 0.9; break;
+      default:        ctx.lineWidth = brushSize;
     }
-  }, [brushSize, color]);
+  };
 
-  const paintSegment = useCallback((ctx: CanvasRenderingContext2D, from: Point, to: Point) => {
+  const drawSegment = (ctx: CanvasRenderingContext2D, from: Point, to: Point) => {
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.quadraticCurveTo(from.x, from.y, midX, midY);
+    ctx.stroke();
+  };
+
+  const mirror = (p: Point): Point[] => {
+    const out: Point[] = [p];
+    if (symmetry === 'h' || symmetry === 'both') out.push({ x: CANVAS_W - p.x, y: p.y });
+    if (symmetry === 'v' || symmetry === 'both') out.push({ x: p.x, y: CANVAS_H - p.y });
+    if (symmetry === 'both') out.push({ x: CANVAS_W - p.x, y: CANVAS_H - p.y });
+    return out;
+  };
+
+  const paintSegment = (ctx: CanvasRenderingContext2D, from: Point, to: Point) => {
     prepareStroke(ctx, tool);
+    const froms = mirror(from);
+    const tos = mirror(to);
 
-    if (tool === 'fur') {
-      const hairs = Math.max(4, Math.round(brushSize * 1.4));
-      for (let i = 0; i < hairs; i++) {
-        const offsetX = (Math.random() - 0.5) * brushSize * 2.2;
-        const offsetY = (Math.random() - 0.5) * brushSize * 2.2;
-        const hairEndX = to.x + offsetX;
-        const hairEndY = to.y + offsetY;
-        ctx.beginPath();
-        ctx.moveTo(from.x + offsetX * 0.2, from.y + offsetY * 0.2);
-        ctx.lineTo(hairEndX, hairEndY);
-        ctx.stroke();
+    for (let i = 0; i < froms.length; i++) {
+      const f = froms[i];
+      const t = tos[i];
+      if (tool === 'fur') {
+        const hairs = Math.max(4, Math.round(brushSize * 1.4));
+        for (let j = 0; j < hairs; j++) {
+          const ox = (Math.random() - 0.5) * brushSize * 2.2;
+          const oy = (Math.random() - 0.5) * brushSize * 2.2;
+          ctx.beginPath();
+          ctx.moveTo(f.x + ox * 0.2, f.y + oy * 0.2);
+          ctx.lineTo(t.x + ox, t.y + oy);
+          ctx.stroke();
+        }
+      } else if (tool === 'spray') {
+        const count = Math.max(8, brushSize * 4);
+        const r = brushSize * 2;
+        for (let j = 0; j < count; j++) {
+          const a = Math.random() * Math.PI * 2;
+          const rr = Math.random() * r;
+          ctx.fillRect(t.x + Math.cos(a) * rr, t.y + Math.sin(a) * rr, 1, 1);
+        }
+      } else if (tool === 'eyebrow') {
+        drawSegment(ctx, f, t);
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, brushSize * 0.3);
+        drawSegment(ctx, { x: f.x + 1.5, y: f.y + 0.5 }, { x: t.x + 1.5, y: t.y + 0.5 });
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = Math.max(1, brushSize * 0.6);
+      } else {
+        drawSegment(ctx, f, t);
       }
-      return;
     }
+  };
 
-    if (tool === 'eyebrow') {
-      drawSmoothStroke(ctx, from, to);
-      ctx.globalAlpha = 0.35;
-      ctx.lineWidth = Math.max(1, brushSize * 0.3);
-      drawSmoothStroke(ctx, { x: from.x + 1.5, y: from.y + 0.5 }, { x: to.x + 1.5, y: to.y + 0.5 });
-      ctx.globalAlpha = 1;
-      return;
-    }
+  // shape drawing on preview, committed on mouseup
+  const drawShapePreview = (from: Point, to: Point) => {
+    const pctx = previewRef.current!.getContext('2d')!;
+    pctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    pctx.strokeStyle = color;
+    pctx.fillStyle = color;
+    pctx.lineWidth = brushSize;
+    pctx.lineCap = 'round';
 
-    drawSmoothStroke(ctx, from, to);
-  }, [brushSize, prepareStroke, tool]);
+    const drawOne = (a: Point, b: Point) => {
+      pctx.beginPath();
+      const w = b.x - a.x, h = b.y - a.y;
+      const cx = a.x + w / 2, cy = a.y + h / 2;
+      switch (tool) {
+        case 'line': pctx.moveTo(a.x, a.y); pctx.lineTo(b.x, b.y); pctx.stroke(); break;
+        case 'rect': pctx.rect(a.x, a.y, w, h); pctx.stroke(); break;
+        case 'circle': {
+          pctx.ellipse(cx, cy, Math.abs(w / 2) || 1, Math.abs(h / 2) || 1, 0, 0, Math.PI * 2);
+          pctx.stroke();
+          break;
+        }
+        case 'triangle': {
+          pctx.moveTo(cx, a.y);
+          pctx.lineTo(b.x, b.y);
+          pctx.lineTo(a.x, b.y);
+          pctx.closePath();
+          pctx.stroke();
+          break;
+        }
+        case 'star': {
+          const spikes = 5;
+          const r = Math.min(Math.abs(w), Math.abs(h)) / 2 || 1;
+          for (let i = 0; i < spikes * 2; i++) {
+            const ang = (Math.PI / spikes) * i - Math.PI / 2;
+            const rr = i % 2 === 0 ? r : r / 2;
+            const px = cx + Math.cos(ang) * rr;
+            const py = cy + Math.sin(ang) * rr;
+            if (i === 0) pctx.moveTo(px, py); else pctx.lineTo(px, py);
+          }
+          pctx.closePath();
+          pctx.stroke();
+          break;
+        }
+        case 'arrow': {
+          pctx.moveTo(a.x, a.y);
+          pctx.lineTo(b.x, b.y);
+          pctx.stroke();
+          const ang = Math.atan2(b.y - a.y, b.x - a.x);
+          const head = Math.max(10, brushSize * 2);
+          pctx.beginPath();
+          pctx.moveTo(b.x, b.y);
+          pctx.lineTo(b.x - head * Math.cos(ang - Math.PI / 7), b.y - head * Math.sin(ang - Math.PI / 7));
+          pctx.lineTo(b.x - head * Math.cos(ang + Math.PI / 7), b.y - head * Math.sin(ang + Math.PI / 7));
+          pctx.closePath();
+          pctx.fill();
+          break;
+        }
+        case 'polygon': {
+          const sides = 6;
+          const r = Math.min(Math.abs(w), Math.abs(h)) / 2 || 1;
+          for (let i = 0; i < sides; i++) {
+            const ang = (Math.PI * 2 / sides) * i - Math.PI / 2;
+            const px = cx + Math.cos(ang) * r;
+            const py = cy + Math.sin(ang) * r;
+            if (i === 0) pctx.moveTo(px, py); else pctx.lineTo(px, py);
+          }
+          pctx.closePath();
+          pctx.stroke();
+          break;
+        }
+      }
+    };
 
-  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current!;
+    const froms = mirror(from);
+    const tos = mirror(to);
+    for (let i = 0; i < froms.length; i++) drawOne(froms[i], tos[i]);
+
+    compose();
+  };
+
+  const commitPreview = () => {
+    if (!activeLayer || !previewRef.current) return;
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    ctx.drawImage(previewRef.current, 0, 0);
+    previewRef.current.getContext('2d')!.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    compose();
+  };
+
+  const getPos = (e: React.MouseEvent | React.TouchEvent): Point => {
+    const canvas = composedRef.current!;
     const rect = canvas.getBoundingClientRect();
     const scaleX = CANVAS_W / rect.width;
     const scaleY = CANVAS_H / rect.height;
@@ -180,14 +400,14 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
   });
 
   const floodFill = (sx: number, sy: number) => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
+    if (!activeLayer) return;
+    const ctx = activeLayer.canvas.getContext('2d')!;
     const imgData = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
     const d = imgData.data;
     const tIdx = (sy * CANVAS_W + sx) * 4;
     const tR = d[tIdx], tG = d[tIdx + 1], tB = d[tIdx + 2], tA = d[tIdx + 3];
     const fill = hexToRgb(color);
-    if (tR === fill.r && tG === fill.g && tB === fill.b) return;
+    if (tR === fill.r && tG === fill.g && tB === fill.b && tA === 255) return;
     const visited = new Uint8Array(CANVAS_W * CANVAS_H);
     const stack: number[] = [sx, sy];
     while (stack.length > 0) {
@@ -204,226 +424,365 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
       stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
     }
     ctx.putImageData(imgData, 0, 0);
+    compose();
   };
+
+  const stampFace = (kind: FaceStamp, cx: number, cy: number, size: number) => {
+    if (!activeLayer) return;
+    saveState();
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    ctx.save();
+    ctx.lineWidth = Math.max(2, size * 0.08);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    switch (kind) {
+      case 'nose': {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - size);
+        ctx.lineTo(cx - size * 0.5, cy + size * 0.4);
+        ctx.quadraticCurveTo(cx, cy + size * 0.6, cx + size * 0.5, cy + size * 0.4);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(cx - size * 0.2, cy + size * 0.3, size * 0.12, size * 0.18, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx + size * 0.2, cy + size * 0.3, size * 0.12, size * 0.18, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'eye': {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, size, size * 0.55, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.fillStyle = '#ffffff';
+        ctx.ellipse(cx, cy, size * 0.95, size * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.arc(cx, cy, size * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = '#000';
+        ctx.arc(cx, cy, size * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'mouth': {
+        ctx.beginPath();
+        ctx.moveTo(cx - size, cy);
+        ctx.quadraticCurveTo(cx, cy + size * 0.7, cx + size, cy);
+        ctx.quadraticCurveTo(cx, cy + size * 0.3, cx - size, cy);
+        ctx.fillStyle = '#c62828';
+        ctx.fill();
+        ctx.stroke();
+        break;
+      }
+      case 'mustache': {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.bezierCurveTo(cx - size * 0.4, cy - size * 0.5, cx - size, cy - size * 0.3, cx - size * 1.2, cy + size * 0.2);
+        ctx.bezierCurveTo(cx - size * 0.7, cy + size * 0.1, cx - size * 0.3, cy + size * 0.1, cx, cy);
+        ctx.bezierCurveTo(cx + size * 0.4, cy - size * 0.5, cx + size, cy - size * 0.3, cx + size * 1.2, cy + size * 0.2);
+        ctx.bezierCurveTo(cx + size * 0.7, cy + size * 0.1, cx + size * 0.3, cy + size * 0.1, cx, cy);
+        ctx.fill();
+        break;
+      }
+      case 'ear': {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, size * 0.6, size, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, size * 0.3, size * 0.6, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'hair': {
+        for (let i = -6; i <= 6; i++) {
+          ctx.beginPath();
+          ctx.moveTo(cx + i * size * 0.18, cy);
+          ctx.quadraticCurveTo(cx + i * size * 0.18 + size * 0.1, cy - size * 0.7, cx + i * size * 0.18 + size * 0.05, cy - size);
+          ctx.stroke();
+        }
+        break;
+      }
+    }
+    ctx.restore();
+    compose();
+    playClick();
+  };
+
+  // Templates
+  const loadTemplate = (id: string) => {
+    if (!activeLayer) return;
+    saveState();
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    ctx.save();
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 6]);
+    const cx = CANVAS_W / 2, cy = CANVAS_H / 2;
+    if (id === 'face') {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 300, 380, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(cx - 110, cy - 80, 35, 25, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 110, cy - 80, 35, 25, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 40);
+      ctx.lineTo(cx, cy + 60);
+      ctx.moveTo(cx - 80, cy + 150);
+      ctx.quadraticCurveTo(cx, cy + 220, cx + 80, cy + 150);
+      ctx.stroke();
+    } else if (id === 'house') {
+      ctx.beginPath();
+      ctx.rect(cx - 200, cy - 100, 400, 300);
+      ctx.moveTo(cx - 230, cy - 100);
+      ctx.lineTo(cx, cy - 280);
+      ctx.lineTo(cx + 230, cy - 100);
+      ctx.stroke();
+    } else if (id === 'tree') {
+      ctx.beginPath();
+      ctx.rect(cx - 35, cy + 50, 70, 200);
+      ctx.moveTo(cx, cy - 200);
+      ctx.arc(cx, cy - 50, 200, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (id === 'cat') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 200, 0, Math.PI * 2);
+      ctx.moveTo(cx - 200, cy - 100);
+      ctx.lineTo(cx - 120, cy - 250);
+      ctx.lineTo(cx - 60, cy - 130);
+      ctx.moveTo(cx + 200, cy - 100);
+      ctx.lineTo(cx + 120, cy - 250);
+      ctx.lineTo(cx + 60, cy - 130);
+      ctx.stroke();
+    }
+    ctx.restore();
+    compose();
+    playClick();
+  };
+
+  // ===== input handlers =====
+  const SHAPE_TOOLS: Tool[] = ['line', 'rect', 'circle', 'triangle', 'star', 'arrow', 'polygon'];
 
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     if (disabled) return;
     e.preventDefault();
-    saveState();
     const pos = getPos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
 
     if (tool === 'fill') {
+      saveState();
       floodFill(Math.floor(pos.x), Math.floor(pos.y));
       return;
     }
 
-    if (['line', 'rect', 'circle'].includes(tool)) {
+    saveState();
+
+    if (SHAPE_TOOLS.includes(tool)) {
       startPos.current = pos;
-      savedImageData.current = ctx.getImageData(0, 0, CANVAS_W, CANVAS_H);
-      setIsDrawing(true);
+      isDrawingRef.current = true;
       return;
     }
 
     lastPos.current = pos;
+    isDrawingRef.current = true;
+    if (!activeLayer) return;
+    const ctx = activeLayer.canvas.getContext('2d')!;
     paintSegment(ctx, pos, { x: pos.x + 0.1, y: pos.y + 0.1 });
-    setIsDrawing(true);
+    compose();
   };
 
   const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing || disabled) return;
+    if (!isDrawingRef.current || disabled) return;
     e.preventDefault();
     const pos = getPos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
 
-    if (['line', 'rect', 'circle'].includes(tool) && savedImageData.current) {
-      ctx.putImageData(savedImageData.current, 0, 0);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = brushSize;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      const sp = startPos.current;
-      if (tool === 'line') {
-        ctx.moveTo(sp.x, sp.y);
-        ctx.lineTo(pos.x, pos.y);
-      } else if (tool === 'rect') {
-        ctx.rect(sp.x, sp.y, pos.x - sp.x, pos.y - sp.y);
-      } else {
-        const rx = Math.abs(pos.x - sp.x) / 2;
-        const ry = Math.abs(pos.y - sp.y) / 2;
-        const cx = sp.x + (pos.x - sp.x) / 2;
-        const cy = sp.y + (pos.y - sp.y) / 2;
-        ctx.ellipse(cx, cy, Math.max(rx, 1), Math.max(ry, 1), 0, 0, Math.PI * 2);
-      }
-      ctx.stroke();
+    if (SHAPE_TOOLS.includes(tool)) {
+      drawShapePreview(startPos.current, pos);
       return;
     }
-
-    if (lastPos.current) {
-      paintSegment(ctx, lastPos.current, pos);
-    }
+    if (!activeLayer) return;
+    const ctx = activeLayer.canvas.getContext('2d')!;
+    if (lastPos.current) paintSegment(ctx, lastPos.current, pos);
     lastPos.current = pos;
+    compose();
   };
 
   const handleEnd = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
-    savedImageData.current = null;
+    if (!isDrawingRef.current) return;
+    if (SHAPE_TOOLS.includes(tool)) commitPreview();
+    isDrawingRef.current = false;
     lastPos.current = null;
   };
 
-  const handleSubmit = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    onSubmit(canvas.toDataURL('image/jpeg', 0.92));
+  // face stamp double-click on canvas
+  const [stampTool, setStampTool] = useState<FaceStamp | null>(null);
+  const handleClick = (e: React.MouseEvent) => {
+    if (!stampTool) return;
+    const pos = getPos(e);
+    stampFace(stampTool, pos.x, pos.y, brushSize * 6);
   };
 
-  const selectedTool = TOOL_BUTTONS.find((item) => item.id === tool) ?? TOOL_BUTTONS[0];
+  const handleSubmit = () => {
+    const canvas = composedRef.current;
+    if (!canvas) return;
+    // flatten with white background
+    const out = document.createElement('canvas');
+    out.width = CANVAS_W; out.height = CANVAS_H;
+    const octx = out.getContext('2d')!;
+    octx.fillStyle = '#FFFFFF';
+    octx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    octx.drawImage(canvas, 0, 0);
+    onSubmit(out.toDataURL('image/jpeg', 0.92));
+  };
 
   return (
     <div className="flex flex-col items-center gap-3 w-full">
-      <div className="grid w-full max-w-[1120px] gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="game-card space-y-4 p-4">
+      <div className="grid w-full max-w-[1200px] gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
+        {/* SIDEBAR */}
+        <div className="game-card space-y-3 p-3 max-h-[80vh] overflow-y-auto">
+          {/* Colors */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="font-bold text-sm">Színpaletta</span>
               <span className="text-xs text-muted-foreground">{color.toUpperCase()}</span>
             </div>
-            <div className="grid grid-cols-6 gap-1.5">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                className={`w-7 h-7 rounded border-2 transition-transform ${
-                  c === color ? 'border-foreground scale-110' : 'border-border/40'
-                }`}
-                style={{ backgroundColor: c }}
-                type="button"
-                onClick={() => { setColor(c); playClick(); }}
-              />
-            ))}
+            <div className="grid grid-cols-8 gap-1">
+              {COLORS.map((c) => (
+                <button key={c} className={`w-7 h-7 rounded border-2 transition-transform ${c === color ? 'border-foreground scale-110' : 'border-border/40'}`}
+                  style={{ backgroundColor: c }} type="button" onClick={() => { setColor(c); playClick(); }} />
+              ))}
             </div>
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+              className="h-9 w-full mt-2 cursor-pointer rounded-lg border border-border bg-card p-1" />
+          </div>
 
-            <div className="mt-3">
-              <label className="text-sm font-bold mb-1 block">Összes szín</label>
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="h-11 w-full cursor-pointer rounded-lg border border-border bg-card p-1"
-              />
+          {/* Width slider */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-sm">Vonalvastagság</span>
+              <span className="text-xs">{brushSize}px</span>
+            </div>
+            <input type="range" min={1} max={80} value={brushSize}
+              onChange={(e) => setBrushSize(Number(e.target.value))} className="w-full" />
+          </div>
+
+          {/* Symmetry */}
+          <div>
+            <div className="font-bold text-sm mb-1">🪞 Szimmetria</div>
+            <div className="grid grid-cols-4 gap-1">
+              {([
+                { id: 'off', label: 'Ki' },
+                { id: 'h', label: '↔' },
+                { id: 'v', label: '↕' },
+                { id: 'both', label: '✚' },
+              ] as const).map((o) => (
+                <button key={o.id} type="button"
+                  className={`text-xs py-2 rounded-lg border-2 font-bold ${symmetry === o.id ? 'border-primary bg-primary/20' : 'border-border bg-card'}`}
+                  onClick={() => setSymmetry(o.id as any)}>
+                  {o.label}
+                </button>
+              ))}
             </div>
           </div>
 
+          {/* Tools */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-sm">Tool katalógus</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button type="button" className="game-btn text-sm py-2 px-3">
-                    🧰 Több tool
+            <div className="font-bold text-sm mb-1">🧰 Eszközök</div>
+            <div className="grid grid-cols-3 gap-1">
+              {TOOL_BUTTONS.map((t) => (
+                <button key={t.id} type="button"
+                  className={`text-xs py-2 px-1 rounded-lg border-2 font-bold ${tool === t.id ? 'border-primary bg-primary/20' : 'border-border bg-card'}`}
+                  onClick={() => { setTool(t.id); setStampTool(null); playClick(); }}>
+                  {t.icon} <span className="block text-[10px]">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Face stamps */}
+          <div>
+            <div className="font-bold text-sm mb-1">😀 Arc elemek (kattints a canvasra)</div>
+            <div className="grid grid-cols-3 gap-1">
+              {FACE_STAMPS.map((s) => (
+                <button key={s.id} type="button"
+                  className={`text-xs py-2 px-1 rounded-lg border-2 font-bold ${stampTool === s.id ? 'border-accent bg-accent/30' : 'border-border bg-card'}`}
+                  onClick={() => { setStampTool(stampTool === s.id ? null : s.id); playClick(); }}>
+                  {s.icon} <span className="block text-[10px]">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Templates */}
+          <div>
+            <div className="font-bold text-sm mb-1">📐 Rajzsablon</div>
+            <div className="grid grid-cols-2 gap-1">
+              {TEMPLATES.map((t) => (
+                <button key={t.id} type="button" className="text-xs py-2 rounded-lg border-2 border-border bg-card font-bold"
+                  onClick={() => loadTemplate(t.id)}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Layers */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-sm">📚 Rétegek</span>
+              <button type="button" className="text-xs py-1 px-2 rounded border-2 border-border bg-card font-bold" onClick={addLayer}>+ Új</button>
+            </div>
+            <div className="space-y-1">
+              {[...layers].reverse().map((l) => (
+                <div key={l.id} className={`flex items-center gap-1 p-1 rounded border-2 ${activeLayerId === l.id ? 'border-primary bg-primary/10' : 'border-border bg-card'}`}>
+                  <button className="text-xs" type="button" onClick={() => toggleLayer(l.id)} title="Láthatóság">
+                    {l.visible ? '👁️' : '🚫'}
                   </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80">
-                  <div className="grid grid-cols-2 gap-2">
-                    {TOOL_BUTTONS.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`game-btn text-sm py-2 px-3 justify-start ${tool === item.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
-                        onClick={() => { setTool(item.id); playClick(); }}
-                      >
-                        {item.icon} {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card/60 p-3">
-              <div className="font-bold">{selectedTool.icon} {selectedTool.label}</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {tool === 'eyebrow'
-                  ? 'Finom, vékony, rétegezhető húzások részletekhez.'
-                  : tool === 'fur'
-                    ? 'Több apró szálat rajzol egyszerre szőrökhöz és textúrához.'
-                    : 'Smooth, nagy felbontású rajzolás pontosabb vonalakkal.'}
-              </p>
+                  <button type="button" className="flex-1 text-left text-xs font-bold truncate"
+                    onClick={() => setActiveLayerId(l.id)}>{l.name}</button>
+                  <button type="button" className="text-xs" onClick={() => moveLayer(l.id, 1)}>⬆</button>
+                  <button type="button" className="text-xs" onClick={() => moveLayer(l.id, -1)}>⬇</button>
+                  <button type="button" className="text-xs" onClick={() => deleteLayer(l.id)} disabled={layers.length <= 1}>🗑️</button>
+                </div>
+              ))}
             </div>
           </div>
 
+          {/* Zoom */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1">
               <span className="font-bold text-sm">Zoom</span>
-              <span className="text-sm text-primary font-bold">{Math.round(zoom * 100)}%</span>
+              <span className="text-xs text-primary font-bold">{Math.round(zoom * 100)}%</span>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" className="game-btn px-3 py-2" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))}>
-                −
-              </button>
-              <input
-                type="range"
-                min={0.75}
-                max={3}
-                step={0.05}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="flex-1"
-              />
-              <button type="button" className="game-btn px-3 py-2" onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}>
-                +
-              </button>
-            </div>
-            <button type="button" className="mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors" onClick={() => setZoom(1)}>
-              Vissza 100%-ra
-            </button>
+            <input type="range" min={0.5} max={3} step={0.05} value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))} className="w-full" />
           </div>
         </div>
 
+        {/* CANVAS */}
         <div className="game-card p-3">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            {TOOL_BUTTONS.slice(0, 4).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`game-btn text-sm py-2 px-3 ${tool === t.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
-                onClick={() => { setTool(t.id); playClick(); }}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-
-            <div className="h-8 w-px bg-border mx-1" />
-
-            {BRUSH_SIZES.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                  brushSize === s ? 'border-primary bg-primary/20' : 'border-border bg-card'
-                }`}
-                onClick={() => { setBrushSize(s); playClick(); }}
-              >
-                <div
-                  className="rounded-full bg-foreground"
-                  style={{ width: Math.min(s + 2, 20), height: Math.min(s + 2, 20) }}
-                />
-              </button>
-            ))}
+          <div className="flex items-center gap-2 mb-2 flex-wrap text-sm">
+            <button className="game-btn bg-card py-1 px-3" onClick={undo} disabled={undoStack.length === 0}>↩️ Vissza (Ctrl+Z)</button>
+            <button className="game-btn bg-card py-1 px-3" onClick={redo} disabled={redoStack.length === 0}>↪️ Előre</button>
+            <button className="game-btn bg-card py-1 px-3" onClick={clearActive}>🗑️ Réteg törlése</button>
+            <div className="flex-1" />
+            <button className="game-btn-primary py-1 px-4" onClick={handleSubmit} disabled={disabled}>✅ KÉSZ!</button>
           </div>
 
-          <div className="overflow-auto rounded-xl border border-border bg-card/50 scroll-smooth max-h-[72vh]">
+          <div className="overflow-auto rounded-xl border border-border bg-card/50 max-h-[70vh]">
             <div className="min-w-max p-2">
               <div
-                className={`relative overflow-hidden rounded-lg bg-card ${isSecret ? 'blur-md' : ''}`}
-                style={{
-                  width: `${DISPLAY_W * zoom}px`,
-                  height: `${DISPLAY_H * zoom}px`,
-                  transition: 'width 180ms ease, height 180ms ease',
-                }}
+                className={`relative overflow-hidden rounded-lg bg-white ${isSecret ? 'blur-md' : ''}`}
+                style={{ width: `${DISPLAY_W * zoom}px`, height: `${DISPLAY_H * zoom}px` }}
               >
                 <canvas
-                  ref={canvasRef}
+                  ref={composedRef}
                   width={CANVAS_W}
                   height={CANVAS_H}
                   className="w-full h-full cursor-crosshair touch-none"
@@ -434,36 +793,10 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
                   onTouchStart={handleStart}
                   onTouchMove={handleMove}
                   onTouchEnd={handleEnd}
+                  onClick={handleClick}
                 />
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-center mt-3">
-            {TOOL_BUTTONS.slice(4).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={`game-btn text-sm py-2 px-3 ${tool === t.id ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
-                onClick={() => { setTool(t.id); playClick(); }}
-                title={t.label}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-
-            <div className="h-8 w-px bg-border mx-1" />
-
-            <button className="game-btn bg-card text-sm py-2 px-3" onClick={undo} disabled={undoStack.length === 0}>
-              ↩️ Vissza
-            </button>
-            <button className="game-btn bg-card text-sm py-2 px-3" onClick={clearCanvas}>
-              🗑️ Törlés
-            </button>
-
-            <button className="game-btn-primary text-sm py-2 px-4" onClick={handleSubmit} disabled={disabled}>
-              ✅ KÉSZ!
-            </button>
           </div>
         </div>
       </div>

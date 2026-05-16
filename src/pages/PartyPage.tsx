@@ -160,6 +160,7 @@ function PartyContent({ code, playerId, username, avatar }: {
               totalPlayers={game.totalPlayers}
               isHost={game.isHost}
               isSecret={isSecret}
+              gameMode={game.settings.gameMode}
               onSubmit={game.submitEntry}
             />
           )}

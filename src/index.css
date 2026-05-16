@@ -45,14 +45,61 @@
   }
 }
 
+/* ============ FLASH COMMANDO MODE ============ */
+:root.flash-commando {
+  --background: 285 100% 8%;
+  --foreground: 60 100% 92%;
+  --card: 290 70% 14%;
+  --card-foreground: 60 100% 92%;
+  --popover: 290 70% 18%;
+  --popover-foreground: 60 100% 92%;
+  --primary: 320 100% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 195 100% 55%;
+  --secondary-foreground: 0 0% 5%;
+  --muted: 285 40% 25%;
+  --muted-foreground: 60 80% 80%;
+  --accent: 60 100% 55%;
+  --accent-foreground: 285 100% 10%;
+  --destructive: 0 100% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 60 100% 60%;
+  --input: 290 60% 20%;
+  --ring: 320 100% 55%;
+}
+
+:root.flash-commando body {
+  font-family: 'Impact', 'Bebas Neue', 'Fredoka', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+:root.flash-commando .game-card {
+  background: linear-gradient(135deg, hsl(290 70% 16%), hsl(320 70% 18%));
+  border-color: hsl(60 100% 60%);
+  box-shadow: 0 0 22px hsl(320 100% 55% / 0.45);
+}
+
+:root.flash-commando .player-slot {
+  background: linear-gradient(135deg, hsl(285 60% 22%), hsl(320 60% 28%));
+}
+
+:root.flash-commando .mode-card {
+  background: linear-gradient(135deg, hsl(290 60% 20%), hsl(320 60% 26%));
+}
+:root.flash-commando .mode-card.active {
+  background: linear-gradient(135deg, hsl(320 80% 35%), hsl(60 100% 50%));
+  box-shadow: 0 0 22px hsl(60 100% 50% / 0.7);
+}
+
 @keyframes marquee {
   0% { transform: translateX(100vw); }
   100% { transform: translateX(-100%); }
 }
 
 @keyframes float-up {
-  0% { transform: translateY(0) scale(1); opacity: 1; }
-  100% { transform: translateY(-200px) scale(1.5); opacity: 0; }
+  0% { transform: translateY(0) scale(0.6) rotate(0deg); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(-260px) scale(1.4) rotate(15deg); opacity: 0; }
 }
 
 @keyframes bounce-in {

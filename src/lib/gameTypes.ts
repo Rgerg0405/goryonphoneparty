@@ -56,6 +56,9 @@ export const GAME_MODES = [
   { id: 'masterpiece', name: 'MESTERMŰ', description: 'Egy kép, több művész', icon: '🖼️' },
   { id: 'story', name: 'TÖRTÉNET', description: 'Közös történet', icon: '📖' },
   { id: 'missing', name: 'HIÁNYZÓ DARAB', description: 'Találd meg a hiányzó részt', icon: '🔍' },
+  { id: 'ai-prompt', name: 'AI PROMPT', description: 'AI generálja a kezdő mondatokat', icon: '🤖' },
+  { id: 'ai-image', name: 'AI KÉP', description: 'AI hyperrealisztikus képet generál', icon: '🪄' },
+  { id: 'modeling-3d', name: '3D MODELL', description: 'Rajz helyett 3D modellt építs', icon: '🧊' },
 ];
 
 export const TIME_OPTIONS = [
