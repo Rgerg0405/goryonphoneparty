@@ -1,8 +1,14 @@
 import goryonLogo from '@/assets/goryonlogo.jpg';
+import FlashCommandoSwitch from './FlashCommandoSwitch';
 
 export default function Header() {
   return (
     <header className="relative w-full overflow-hidden">
+      {/* Flash Commando Switch */}
+      <div className="absolute top-3 left-4 z-20">
+        <FlashCommandoSwitch />
+      </div>
+
       {/* YouTube link */}
       <a
         href="https://www.youtube.com/@GoryON"
