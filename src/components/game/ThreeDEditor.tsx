@@ -130,14 +130,16 @@ function ShapeMesh({
 }
 
 function SceneContent({
-  shapes, selectedId, mode, setSelectedId, registerRef, onTransform, orbitRef, transformAttach, draggingRef,
+  shapes, selectedIds, mode, onPickShape, registerRef, onTransformStart, onTransformDelta, onTransformEnd, orbitRef, transformAttach, draggingRef,
 }: {
   shapes: ShapeItem[];
-  selectedId: string | null;
+  selectedIds: string[];
   mode: Mode;
-  setSelectedId: (id: string | null) => void;
+  onPickShape: (id: string, additive: boolean) => void;
   registerRef: (id: string, m: THREE.Object3D | null) => void;
-  onTransform: () => void;
+  onTransformStart: () => void;
+  onTransformDelta: () => void;
+  onTransformEnd: () => void;
   orbitRef: React.MutableRefObject<any>;
   transformAttach: THREE.Object3D | null;
   draggingRef: React.MutableRefObject<boolean>;
@@ -149,8 +151,8 @@ function SceneContent({
       <directionalLight position={[5, 8, 5]} intensity={1.1} castShadow />
       <Grid args={[20, 20]} cellColor="#444" sectionColor="#888" infiniteGrid />
       {shapes.map((s) => (
-        <ShapeMesh key={s.id} shape={s} selected={s.id === selectedId}
-          onPick={() => setSelectedId(s.id)}
+        <ShapeMesh key={s.id} shape={s} selected={selectedIds.includes(s.id)}
+          onPick={(additive) => onPickShape(s.id, additive)}
           registerRef={registerRef}
           draggingRef={draggingRef} />
       ))}
@@ -158,9 +160,9 @@ function SceneContent({
         <TransformControls
           object={transformAttach}
           mode={mode}
-          onMouseDown={() => { draggingRef.current = true; if (orbitRef.current) orbitRef.current.enabled = false; }}
-          onMouseUp={() => { draggingRef.current = false; if (orbitRef.current) orbitRef.current.enabled = true; onTransform(); }}
-          onObjectChange={onTransform}
+          onMouseDown={() => { draggingRef.current = true; if (orbitRef.current) orbitRef.current.enabled = false; onTransformStart(); }}
+          onMouseUp={() => { draggingRef.current = false; if (orbitRef.current) orbitRef.current.enabled = true; onTransformEnd(); }}
+          onObjectChange={onTransformDelta}
         />
       )}
       <OrbitControls ref={orbitRef} makeDefault />
