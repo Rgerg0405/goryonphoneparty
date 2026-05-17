@@ -77,13 +77,8 @@ function ShapeMesh({
     const native = e.nativeEvent as MouseEvent;
     onPick(native.shiftKey);
   };
-  // Disable raycasting on this mesh while gizmo is being dragged so it
-  // can never intercept the drag move events.
-  const raycast = (...args: any[]) => {
-    if (draggingRef.current) return;
-    // @ts-expect-error – delegate to default
-    return THREE.Mesh.prototype.raycast.apply(this, args as any);
-  };
+  // Note: raycast disabling during drag is handled centrally via draggingRef;
+  // onClick won't fire if the gizmo absorbed the drag.
 
   if (shape.kind === 'text') {
     return (
