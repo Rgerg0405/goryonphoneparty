@@ -1025,6 +1025,55 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
             </div>
           </div>
 
+          {/* Overlay objects: text + media import */}
+          <div>
+            <div className="font-bold text-sm mb-1">🆎 Szöveg / Média</div>
+            <div className="grid grid-cols-2 gap-1">
+              <button type="button" className="game-btn bg-card text-xs py-2" onClick={addTextOverlay}>🔤 Szöveg</button>
+              <label className="game-btn bg-card text-xs py-2 cursor-pointer text-center">
+                🖼️/GIF
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageOverlayFromFile(f); e.target.value = ''; }} />
+              </label>
+              <label className="game-btn bg-card text-xs py-2 cursor-pointer text-center col-span-2">
+                🎬 Videó import
+                <input type="file" accept="video/*" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) addVideoOverlayFromFile(f); e.target.value = ''; }} />
+              </label>
+            </div>
+            {selectedOverlayId && (() => {
+              const sel = overlays.find((o) => o.id === selectedOverlayId);
+              if (!sel) return null;
+              return (
+                <div className="mt-2 space-y-2 p-2 rounded border-2 border-primary/40 bg-primary/5">
+                  <div className="text-[11px] font-bold">Kijelölt: {sel.kind}</div>
+                  {sel.kind === 'text' && (
+                    <>
+                      <textarea value={sel.text || ''} onChange={(e) => updateOverlay(sel.id, { text: e.target.value })}
+                        className="w-full text-xs p-1 rounded border border-border bg-card" rows={2} />
+                      <div className="flex gap-1 items-center">
+                        <input type="color" value={sel.color || '#000'} onChange={(e) => updateOverlay(sel.id, { color: e.target.value })}
+                          className="h-7 w-10 rounded border border-border" />
+                        <input type="range" min={12} max={240} value={sel.fontSize || 64}
+                          onChange={(e) => updateOverlay(sel.id, { fontSize: Number(e.target.value) })} className="flex-1" />
+                      </div>
+                      <select value={sel.font || 'Impact, sans-serif'} onChange={(e) => updateOverlay(sel.id, { font: e.target.value })}
+                        className="w-full text-xs p-1 rounded border border-border bg-card">
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="Comic Sans MS, cursive">Comic Sans</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="Courier New, monospace">Courier</option>
+                      </select>
+                    </>
+                  )}
+                  <button type="button" className="game-btn bg-destructive text-destructive-foreground text-xs py-1 w-full"
+                    onClick={() => deleteOverlay(sel.id)}>🗑️ Törlés</button>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Zoom */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -1066,6 +1115,40 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
                   onTouchEnd={handleEnd}
                   onClick={handleClick}
                 />
+                {/* Overlay handles for selected overlay */}
+                {overlays.map((ov) => {
+                  const sx = (DISPLAY_W * zoom) / CANVAS_W;
+                  const sy = (DISPLAY_H * zoom) / CANVAS_H;
+                  const isSel = ov.id === selectedOverlayId;
+                  return (
+                    <div key={ov.id}
+                      style={{
+                        position: 'absolute',
+                        left: ov.x * sx,
+                        top: ov.y * sy,
+                        width: ov.w * sx,
+                        height: ov.h * sy,
+                        transform: `rotate(${ov.rot}rad)`,
+                        transformOrigin: 'center center',
+                        border: isSel ? '2px dashed hsl(var(--primary))' : '1px dashed transparent',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      {isSel && (
+                        <>
+                          {/* scale handle bottom-right */}
+                          <div onMouseDown={(e) => startOverlayInteraction(e, ov.id, 'scale')}
+                            onTouchStart={(e) => startOverlayInteraction(e, ov.id, 'scale')}
+                            style={{ position: 'absolute', right: -8, bottom: -8, width: 16, height: 16, background: 'hsl(var(--primary))', cursor: 'nwse-resize', pointerEvents: 'auto', borderRadius: 4 }} />
+                          {/* rotate handle top */}
+                          <div onMouseDown={(e) => startOverlayInteraction(e, ov.id, 'rotate')}
+                            onTouchStart={(e) => startOverlayInteraction(e, ov.id, 'rotate')}
+                            style={{ position: 'absolute', left: '50%', top: -28, width: 18, height: 18, background: 'hsl(var(--accent))', cursor: 'grab', pointerEvents: 'auto', borderRadius: '50%', transform: 'translateX(-50%)' }} />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
