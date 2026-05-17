@@ -9,7 +9,7 @@ interface Props {
 }
 
 declare global {
-  interface Window { YT: any; onYouTubeIframeAPIReady?: () => void; }
+  interface Window { YT?: any; onYouTubeIframeAPIReady?: () => void; }
 }
 
 let ytApiPromise: Promise<void> | null = null;
