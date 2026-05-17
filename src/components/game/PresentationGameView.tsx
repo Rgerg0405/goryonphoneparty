@@ -243,7 +243,7 @@ export default function PresentationGameView({ code, players, playerId, username
       const next = presenterIdx + 1;
       const t = setTimeout(() => {
         channelRef.current?.send({ type: 'broadcast', event: 'pres:next', payload: { idx: next } });
-        if (next >= players.length) setPhase('recap');
+        if (next >= players.length) { setPhase('recap'); fireConfetti(80); playApplause(); }
         else startPresentation(next, titlesRef.current);
       }, 800);
       return () => clearTimeout(t);
