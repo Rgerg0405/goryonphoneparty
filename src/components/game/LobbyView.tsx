@@ -265,6 +265,15 @@ function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
       </div>
     );
   }
+  if (mode === 'shooter-3d') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🎯 3D Shooter beállítások</div>
+        <NumberRow label="Játékidő (mp)" value={settings.shooterTime ?? 90} min={30} max={180} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ shooterTime: v })} />
+        <NumberRow label="Célpontok" value={settings.shooterTargets ?? 28} min={10} max={80} disabled={!isHost} onChange={(v) => onUpdateSettings({ shooterTargets: v })} />
+      </div>
+    );
+  }
   if (mode === 'modeling-3d') {
     return (
       <div className="border-t-2 border-border/40 pt-3 space-y-2">
