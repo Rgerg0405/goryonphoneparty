@@ -448,7 +448,7 @@ export default function PresentationGameView({ code, players, playerId, username
                 const el = e.currentTarget;
                 if (!el.dataset.fallback) {
                   el.dataset.fallback = '1';
-                  el.src = `https://source.unsplash.com/featured/1280x720/?${encodeURIComponent(slide.keyword)}`;
+                  el.src = peopleFallbackUrl(`${slideIdx}-${presenterIdx}-${slide.keyword}`);
                 }
               }}
             />
