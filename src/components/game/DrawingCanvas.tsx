@@ -152,6 +152,21 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     if (previewRef.current) ctx.drawImage(previewRef.current, 0, 0);
   }, [layers]);
 
+  // Throttled live broadcast for modes that need it
+  const lastLiveRef = useRef(0);
+  useEffect(() => {
+    if (!onChange) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      if (now - lastLiveRef.current < 700) return;
+      lastLiveRef.current = now;
+      const c = composedRef.current;
+      if (!c) return;
+      try { onChange(c.toDataURL('image/jpeg', 0.55)); } catch {}
+    }, 750);
+    return () => clearInterval(id);
+  }, [onChange]);
+
   // Animation loop for video / gif overlays
   useEffect(() => {
     let raf = 0;
