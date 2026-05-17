@@ -2,6 +2,27 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { playClick } from '@/lib/sounds';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
+// ===== Overlay object types (text / image / gif / video) =====
+type OverlayKind = 'text' | 'image' | 'video';
+interface Overlay {
+  id: string;
+  kind: OverlayKind;
+  x: number; y: number; w: number; h: number; rot: number; // in CANVAS coords
+  // text
+  text?: string;
+  font?: string;
+  fontSize?: number;
+  color?: string;
+  // image / video / gif src
+  src?: string;
+  // gif frames (decoded animated)
+  gifFrames?: ImageBitmap[];
+  gifDelays?: number[];
+  // video element (live)
+  _video?: HTMLVideoElement;
+  _img?: HTMLImageElement;
+}
+
 type Tool =
   | 'brush' | 'eraser' | 'fill' | 'line' | 'rect' | 'circle'
   | 'triangle' | 'star' | 'arrow' | 'polygon'
@@ -91,6 +112,12 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
   });
   const [activeLayerId, setActiveLayerId] = useState<string>('');
 
+  // Overlays (positioned/scalable text & media)
+  const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const overlaysRef = useRef<Overlay[]>([]);
+  useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
+
   const [tool, setTool] = useState<Tool>('brush');
   const [color, setColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(6);
@@ -116,11 +143,57 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     layers.forEach((layer) => {
       if (layer.visible) ctx.drawImage(layer.canvas, 0, 0);
     });
+    // overlays drawn on top
+    overlaysRef.current.forEach((ov) => drawOverlay(ctx, ov));
     // preview overlay
     if (previewRef.current) ctx.drawImage(previewRef.current, 0, 0);
   }, [layers]);
 
-  useEffect(() => { compose(); }, [compose, layers]);
+  // Animation loop for video / gif overlays
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      if (overlaysRef.current.some((o) => o.kind === 'video' || (o.kind === 'image' && o.gifFrames))) {
+        compose();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [compose]);
+
+  const drawOverlay = (ctx: CanvasRenderingContext2D, ov: Overlay) => {
+    ctx.save();
+    ctx.translate(ov.x + ov.w / 2, ov.y + ov.h / 2);
+    ctx.rotate(ov.rot);
+    if (ov.kind === 'text') {
+      ctx.fillStyle = ov.color || '#000';
+      ctx.font = `${ov.fontSize || 48}px ${ov.font || 'sans-serif'}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lines = (ov.text || '').split('\n');
+      const lh = (ov.fontSize || 48) * 1.1;
+      lines.forEach((line, i) => ctx.fillText(line, 0, (i - (lines.length - 1) / 2) * lh));
+    } else if (ov.kind === 'image') {
+      if (ov.gifFrames && ov.gifFrames.length) {
+        const total = ov.gifDelays?.reduce((a, b) => a + b, 0) || 1000;
+        const t = (performance.now() % total);
+        let acc = 0; let idx = 0;
+        for (let i = 0; i < ov.gifFrames.length; i++) {
+          acc += ov.gifDelays?.[i] || 100;
+          if (t < acc) { idx = i; break; }
+        }
+        ctx.drawImage(ov.gifFrames[idx], -ov.w / 2, -ov.h / 2, ov.w, ov.h);
+      } else if (ov._img) {
+        ctx.drawImage(ov._img, -ov.w / 2, -ov.h / 2, ov.w, ov.h);
+      }
+    } else if (ov.kind === 'video' && ov._video && ov._video.readyState >= 2) {
+      ctx.drawImage(ov._video, -ov.w / 2, -ov.h / 2, ov.w, ov.h);
+    }
+    ctx.restore();
+  };
+
+  useEffect(() => { compose(); }, [compose, layers, overlays]);
 
   useEffect(() => {
     // init preview canvas
