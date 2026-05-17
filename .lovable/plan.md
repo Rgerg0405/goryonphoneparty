@@ -1,103 +1,72 @@
-## Goryon Phone – Nagy Frissítés
+## Phase 2 + bugfixek + új funkciók
 
-Sok új feature van a kérésben, ezért szakaszokra bontom és priorizálva építem ki őket, hogy stabil maradjon.
+Sok van benne, ezért megint két részre bontom, hogy stabil maradjon. Először a bugfixek és a kisebb újdonságok, utána a 4 új játékmód.
 
-### 1. AI módok eltávolítása
-- `AI PROMPT` és `AI KÉP` módok törlése a `GAME_MODES` listából (`gameTypes.ts`)
-- `AIImageView.tsx` komponens törlése
-- `ai-generate-image` és `ai-generate-prompts` edge functionök törlése
-- `useGameLogic.ts` AI prompt generálás kivétele
-- `GamePlayView.tsx` AI mód renderelés kivétele
-- `supabase/config.toml` AI function bejegyzések törlése
+### A. 3D Editor javítások és fejlesztések
 
-### 2. Emoji avatarok eltávolítása
-- `avatars.ts`: az emoji-only opciók (alien, robot, ghost, clown, skull, dragon, fire, star) törlése – csak képes avatarok maradnak
+1. **Gizmo dragging bug fix**
+   - A `TransformControls` `dragging-changed` eseményére iratkozom fel; amikor `dragging=true`, `setSelectedId`-t nem engedem váltani és az OrbitControls + pointer events le vannak tiltva a többi meshre. Így egy hátsó alakzat sem "lopja el" a fókuszt drag közben.
+   - A háttér meshek `raycast`-jét kikapcsolom drag alatt.
 
-### 3. 3D Modellezés profibb
-- Drag-and-drop transform: `TransformControls` (`@react-three/drei`) integrálása – G (mozgatás), R (forgatás), S (skálázás) gombok
-- Több alakzat: prizma, kapszula, oktaéder, ikozaéder, sík, gyűrű
-- Texture/Draw módon: kijelölt alakzatra egy modal-ban kanvasszal lehet textúrát rajzolni, ami `CanvasTexture`-ként alkalmazódik a meshre
-- Egyszerre több kijelölés, duplikálás, csoportos törlés
+2. **Textúra rajzolás javítás (3D paint mód)**
+   - A jelenlegi 2D canvas modal helyett: a kijelölt alakzat egy **külön 3D paint panelba** kerül (saját kis `Canvas` jobb oldalt), megtartva annak forgatását. Bal egér: rajzol a meshre `Raycaster`-rel UV pontosan a `CanvasTexture`-re. Jobb egér / középső: forgat (OrbitControls).
+   - Eszközök: ecset, méret, szín, törlés, mentés.
+   - A textúra (`CanvasTexture`) megmarad a meshen amikor visszalépsz.
 
-### 4. Új játékmódok (működővé tétel)
+3. **Textúra importálás**
+   - A 3D panel oldalsávban: "Textúra feltöltése" gomb → kép fájl betölt `THREE.TextureLoader`-rel, a kijelölt mesh `map`-jaként alkalmazódik.
 
-**Animáció mód:**
-- Frame-alapú: a játékos több képkockát rajzol (állítható, 2–12), GIF-ként össze van fűzve
-- A normál chain helyett saját chain: rajzol → leírja → újra rajzol stb., a végén minden átfolyik az albumba
-- GIF letöltés az album végén (gif.js library)
+4. **Szövegek 3D-ben**
+   - Új alakzat: **Szöveg**. `troika-three-text` (vagy `Text` a `@react-three/drei`-ből — már elérhető) komponenssel. Választható szöveg, méret, szín, betűtípus (3 default).
 
-**GIF letöltés album-ról:**
-- Minden játékmód végén az album minden slide-ja (szöveg + kép) GIF-be kerül és letölthető
+5. **3D modell letöltés**
+   - A "KÉSZ!" gomb mellé: **GLB export** (`GLTFExporter`-rel). Letöltődik `model.glb` néven. A snapshot beküldés a játékban marad.
 
-**Vakrepülés mód:**
-- Egy host által választott rajzoló a teljes körön át rajzol – nem látja a vásznát (csak sötét rétget), a többiek live-ban nézik (broadcast-channel képbeküldés ~500ms-onként)
-- Kör végén csillag (1–5) pontozás, leaderboard
+### B. Rajzoló (DrawingCanvas) bővítés
 
-**Scribble mód (új):**
-- Sorban van mindig egy rajzoló, random szót kap a rendszertől
-- Beállítható: körök száma, custom szólista (host adja hozzá szövegmezőben)
-- Live broadcast a rajzról, többiek chatben tippelnek
-- Pontozás idő alapján (gyorsabb tipp = több pont), a rajzoló is kap pontot
+1. **Szöveg layer** — kattintásra szöveget helyez el, font/méret/szín állítható, később mozgatható, törölhető.
+2. **Kép layer paint-szerű manipuláció** — drag mozgatás + sarok handle-ök skálázáshoz + forgatás handle. (Már létezik image layer, csak interaktív kontrollokat adok hozzá.)
+3. **GIF import** — gif fájl betöltve `gifuct-js`-szel, frame-ekre bontva, animált layerként kerül a vászonra (folyamatos lejátszás preview alatt, a beküldött rajznál a kompozit első frame megy ki).
+4. **Videó import** — mp4 fájl `HTMLVideoElement` → `THREE`-szerű loop a vásznon, ugyanúgy mozgatható/skálázható, beküldéskor az aktuális frame snapshotolódik.
 
-**Vicces Prezentáció mód:**
-- Lobbyban mindenki ír prezentáció címet
-- Mindenki kap 2-t és választ egyet
-- Párba sorsol: prezentáló + segéd
-- Segéd: dia-anként választ képet (Pexels/Unsplash ingyenes API) vagy random vicces mondat sablonokat
-- Prezentáció alatt a segéd váltja a slide-okat élőben
-- Nézők ↑/↓ reakcióval értékelnek, gauge mutatja a teljesítményt
-- Végén jegyzet írás, körzáráskor összegzés
-- TTS útmutató a kör elején
+### C. Phase 2 — új játékmódok
 
-### 5. Normál mód – kép import opció
-- Lobby beállítás: „Képek importálása megengedve”
-- DrawingCanvas: új layer típus (image), drag/resize/rotate az importált képen, a layers panelben kezelhető
-
-### 6. UI animációk modernizálás
-- Több framer/css animáció (hover-glow, scale-bounce, gradient pulzálás), élénkebb tranzíciók
-- Lobby zene: `lobby-music.mp3` (royalty free), mute toggle a Headerben, autoplay user-gesture után
-
-### 7. Technikai részletek
-
-```text
-új fájlok:
-- src/components/game/ScribbleGameView.tsx
-- src/components/game/BlindFlightView.tsx
-- src/components/game/SillyPresentationView.tsx
-- src/components/game/AnimationFrameEditor.tsx
-- src/components/game/ImageLayerControls.tsx (drawing image import)
-- src/lib/gifExport.ts (gif.js wrapper)
-- src/lib/scribbleWords.ts (~300 magyar szó)
-- src/lib/presentationAssets.ts (Pexels fetch + random sablon mondatok)
-- src/hooks/useLobbyMusic.ts
-- supabase/migrations/*.sql (új broadcast nem kell, channels-on megy; csak score mező a game_entries-re ha kell, vagy külön scores tábla)
-
-törlések:
-- src/components/game/AIImageView.tsx
-- supabase/functions/ai-generate-image
-- supabase/functions/ai-generate-prompts
+Új fájlok:
+```
+src/components/game/ScribbleGameView.tsx
+src/components/game/BlindFlightView.tsx
+src/components/game/AnimationGameView.tsx
+src/components/game/PresentationGameView.tsx
+src/lib/scribbleWords.ts
+src/lib/gifExport.ts (animáció mód + album export)
 ```
 
-### 8. Megjegyzések / felmerülő pontok
-- A scribble és blind-flight live broadcastot Supabase Realtime Broadcast channellel oldom meg (DB nélkül, alacsony latency)
-- A prezentáció képekhez vagy beépített random URL pool, vagy a saját kéréssel egy Pexels keyt kéne hozzáadni – első körben beépített fallback készlettel indítok, és kapsz egy beállítást, hogy később hozzáadhatsz API kulcsot
-- A GIF generálás kliens oldalon megy (gif.js + worker)
-- A lobby zenét royalty-free MP3-ként hozzáadom, ki/be kapcsolható
+1. **Scribble mód**
+   - Sorban van egy rajzoló, random magyar szó (200+ szó). A többiek a chatben tippelnek. Live broadcast a vászonról (`postgres_changes` helyett Realtime Broadcast channel ~400 ms-onként). Pontozás: idő alapján a tippelőnek + a rajzolónak. Körök száma beállítható.
 
-### 9. Szakaszos szállítás
-Mivel ez nagyon nagy, **két lépcsőben** szállítom (ugyanazon a beszélgetésen belül egymás után):
+2. **Vakrepülés**
+   - A rajzoló egy elsötétített canvason rajzol (nem látja a vonalait). Live a többieknek. Kör végén 1–5 csillag pontozás, leaderboard.
+
+3. **Animáció**
+   - Frame-alapú rajzeditor (2–12 frame), GIF export a végén. A normál chainből kimaradnak az írás-lépések; minden játékos animációt készít a chain elemeire.
+
+4. **Vicces Prezentáció**
+   - Lobbyban címeket írnak. Mindenki kap egy címet és egy partnert (segéd). Élő prezentáció: segéd váltja a slide-okat (random vicces sablonok + opcionális emoji kép-pool). Nézők ↑/↓ reakció, gauge mutatja a teljesítményt. Végén jegyzet írás. TTS útmutató a mód elején. Mindenki egyszer prezentál.
+   - Score + jegyzetek a végén kiírva.
+
+### D. Általános bugfixek
+- Album reactions UI néha duplikálta a TTS playt → guardolom session-onként.
+- Player avatar fallback ellenőrzés.
+- `useGameLogic` újrabelépéskor néha kétszer iratkozott fel a channelre → cleanup szigorúbb.
+
+### E. Szakaszos szállítás
 
 **1. fázis (most):**
-- AI módok és emojik törlése
-- 3D editor drag/transform + új alakzatok + texture-draw
-- Kép import a normál rajzba
-- Lobby zene + UI animációk
-- GIF export album-ról
+- A. 3D Editor javítások (bug, paint, textúra import, szöveg, GLB export)
+- B. Rajzoló bővítés (szöveg, kép manipuláció, GIF + videó import)
+- D. Általános bugfixek
 
-**2. fázis (rögtön utána):**
-- Animáció mód
-- Scribble mód
-- Vakrepülés mód
-- Vicces prezentáció mód
+**2. fázis (utána):**
+- C. Mind a 4 új játékmód
 
-Indulhat?
+Indulhat az 1. fázis?

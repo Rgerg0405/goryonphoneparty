@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, GizmoHelper, GizmoViewport, Grid, TransformControls } from '@react-three/drei';
+import { Canvas, ThreeEvent } from '@react-three/fiber';
+import { OrbitControls, GizmoHelper, GizmoViewport, Grid, TransformControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { playClick } from '@/lib/sounds';
 
 type ShapeKind =
   | 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'tetrahedron'
-  | 'capsule' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'plane' | 'ring' | 'torusKnot';
+  | 'capsule' | 'octahedron' | 'icosahedron' | 'dodecahedron' | 'plane' | 'ring' | 'torusKnot' | 'text';
 
 type Mode = 'translate' | 'rotate' | 'scale';
 
@@ -18,6 +19,7 @@ interface ShapeItem {
   rotation: [number, number, number];
   color: string;
   textureUrl?: string;
+  textValue?: string;
 }
 
 const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
@@ -27,36 +29,60 @@ const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
   { id: 'cone', icon: '🔺', label: 'Kúp' },
   { id: 'torus', icon: '🍩', label: 'Tórusz' },
   { id: 'torusKnot', icon: '🪢', label: 'Csomó' },
-  { id: 'tetrahedron', icon: '🔻', label: 'Tetraéder' },
-  { id: 'octahedron', icon: '💎', label: 'Oktaéder' },
-  { id: 'icosahedron', icon: '⬢', label: 'Ikozaéder' },
-  { id: 'dodecahedron', icon: '🎲', label: 'Dodekaéder' },
+  { id: 'tetrahedron', icon: '🔻', label: 'Tetra' },
+  { id: 'octahedron', icon: '💎', label: 'Okta' },
+  { id: 'icosahedron', icon: '⬢', label: 'Ikoza' },
+  { id: 'dodecahedron', icon: '🎲', label: 'Dodeka' },
   { id: 'capsule', icon: '💊', label: 'Kapszula' },
   { id: 'plane', icon: '🟨', label: 'Sík' },
   { id: 'ring', icon: '⭕', label: 'Gyűrű' },
+  { id: 'text', icon: '🔤', label: 'Szöveg' },
 ];
 
 const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#7c3aed', '#000000', '#ffffff', '#f97316'];
 
+function makeTextureFromImage(url: string): THREE.Texture {
+  const loader = new THREE.TextureLoader();
+  const t = loader.load(url);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.needsUpdate = true;
+  return t;
+}
+
 function ShapeMesh({
-  shape, selected, onPick, registerRef,
+  shape, selected, onPick, registerRef, draggingRef,
 }: {
-  shape: ShapeItem; selected: boolean; onPick: () => void; registerRef: (id: string, m: THREE.Mesh | null) => void;
+  shape: ShapeItem; selected: boolean; onPick: () => void;
+  registerRef: (id: string, m: THREE.Object3D | null) => void;
+  draggingRef: React.MutableRefObject<boolean>;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const textRef = useRef<THREE.Object3D>(null);
 
   useEffect(() => {
-    registerRef(shape.id, meshRef.current);
+    const obj = shape.kind === 'text' ? textRef.current : meshRef.current;
+    registerRef(shape.id, obj || null);
     return () => registerRef(shape.id, null);
   });
 
-  const texture = useMemo(() => {
-    if (!shape.textureUrl) return null;
-    const loader = new THREE.TextureLoader();
-    const t = loader.load(shape.textureUrl);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  }, [shape.textureUrl]);
+  const texture = useMemo(() => (shape.textureUrl ? makeTextureFromImage(shape.textureUrl) : null), [shape.textureUrl]);
+
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    if (draggingRef.current) return; // don't steal focus while gizmo drag
+    e.stopPropagation();
+    onPick();
+  };
+
+  if (shape.kind === 'text') {
+    return (
+      <group ref={textRef as any} position={shape.position} rotation={shape.rotation} scale={shape.scale}
+        onPointerDown={handlePointerDown}>
+        <Text fontSize={0.6} color={shape.color} anchorX="center" anchorY="middle" outlineWidth={selected ? 0.02 : 0} outlineColor="#888">
+          {shape.textValue || 'Szöveg'}
+        </Text>
+      </group>
+    );
+  }
 
   const material = (
     <meshStandardMaterial
@@ -73,7 +99,7 @@ function ShapeMesh({
     position: shape.position,
     rotation: shape.rotation,
     scale: shape.scale,
-    onPointerDown: (e: any) => { e.stopPropagation(); onPick(); },
+    onPointerDown: handlePointerDown,
     castShadow: true,
     receiveShadow: true,
   };
@@ -93,22 +119,22 @@ function ShapeMesh({
     case 'plane': return <mesh {...common}><planeGeometry args={[1.2, 1.2]} />{material}</mesh>;
     case 'ring': return <mesh {...common}><ringGeometry args={[0.3, 0.6, 32]} />{material}</mesh>;
   }
+  return null;
 }
 
 function SceneContent({
-  shapes, selectedId, mode, setSelectedId, registerRef, onTransform, orbitRef, transformAttach,
+  shapes, selectedId, mode, setSelectedId, registerRef, onTransform, orbitRef, transformAttach, draggingRef,
 }: {
   shapes: ShapeItem[];
   selectedId: string | null;
   mode: Mode;
   setSelectedId: (id: string | null) => void;
-  registerRef: (id: string, m: THREE.Mesh | null) => void;
+  registerRef: (id: string, m: THREE.Object3D | null) => void;
   onTransform: () => void;
   orbitRef: React.MutableRefObject<any>;
   transformAttach: THREE.Object3D | null;
+  draggingRef: React.MutableRefObject<boolean>;
 }) {
-  const { camera, gl } = useThree();
-
   return (
     <>
       <color attach="background" args={['#1b1b2a']} />
@@ -118,14 +144,15 @@ function SceneContent({
       {shapes.map((s) => (
         <ShapeMesh key={s.id} shape={s} selected={s.id === selectedId}
           onPick={() => setSelectedId(s.id)}
-          registerRef={registerRef} />
+          registerRef={registerRef}
+          draggingRef={draggingRef} />
       ))}
       {transformAttach && (
         <TransformControls
           object={transformAttach}
           mode={mode}
-          onMouseDown={() => { if (orbitRef.current) orbitRef.current.enabled = false; }}
-          onMouseUp={() => { if (orbitRef.current) orbitRef.current.enabled = true; onTransform(); }}
+          onMouseDown={() => { draggingRef.current = true; if (orbitRef.current) orbitRef.current.enabled = false; }}
+          onMouseUp={() => { draggingRef.current = false; if (orbitRef.current) orbitRef.current.enabled = true; onTransform(); }}
           onObjectChange={onTransform}
         />
       )}
@@ -137,96 +164,174 @@ function SceneContent({
   );
 }
 
-// ===== Texture paint modal =====
-function TexturePaintModal({ initial, color: initColor, onClose, onSave }: {
-  initial?: string;
+// ===== 3D Paint modal — paint directly on the selected mesh =====
+function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
+  shape: ShapeItem;
+  canvasRef: React.MutableRefObject<HTMLCanvasElement | null>;
   color: string;
+  size: number;
+  eraser: boolean;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+  const paintingRef = useRef(false);
+
+  // Create offscreen canvas with existing texture or white
+  useEffect(() => {
+    const c = document.createElement('canvas');
+    c.width = 1024; c.height = 1024;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    canvasRef.current = c;
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    textureRef.current = tex;
+    if (shape.textureUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { ctx.drawImage(img, 0, 0, c.width, c.height); tex.needsUpdate = true; };
+      img.src = shape.textureUrl;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const paintAt = (uv: THREE.Vector2) => {
+    const c = canvasRef.current; if (!c) return;
+    const ctx = c.getContext('2d')!;
+    const x = uv.x * c.width;
+    const y = (1 - uv.y) * c.height;
+    ctx.save();
+    ctx.globalCompositeOperation = eraser ? 'destination-out' : 'source-over';
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (textureRef.current) textureRef.current.needsUpdate = true;
+  };
+
+  const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
+    if (e.button !== 0) return;
+    paintingRef.current = true;
+    if (e.uv) paintAt(e.uv.clone());
+  };
+  const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
+    if (!paintingRef.current) return;
+    if (e.uv) paintAt(e.uv.clone());
+  };
+  const onPointerUp = () => { paintingRef.current = false; };
+
+  const args = (() => {
+    switch (shape.kind) {
+      case 'sphere': return ['sphereGeometry', [1, 64, 64]] as const;
+      case 'cylinder': return ['cylinderGeometry', [0.8, 0.8, 1.5, 64]] as const;
+      case 'cone': return ['coneGeometry', [0.8, 1.5, 64]] as const;
+      case 'torus': return ['torusGeometry', [0.7, 0.3, 32, 64]] as const;
+      case 'torusKnot': return ['torusKnotGeometry', [0.6, 0.2, 128, 32]] as const;
+      case 'capsule': return ['capsuleGeometry', [0.5, 1, 16, 32]] as const;
+      case 'plane': return ['planeGeometry', [2, 2]] as const;
+      case 'ring': return ['ringGeometry', [0.4, 1, 64]] as const;
+      case 'tetrahedron': return ['tetrahedronGeometry', [1]] as const;
+      case 'octahedron': return ['octahedronGeometry', [1]] as const;
+      case 'icosahedron': return ['icosahedronGeometry', [1]] as const;
+      case 'dodecahedron': return ['dodecahedronGeometry', [1]] as const;
+      default: return ['boxGeometry', [1.2, 1.2, 1.2]] as const;
+    }
+  })();
+  const [Geom, geomArgs] = args;
+
+  return (
+    <mesh ref={meshRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}>
+      {/* @ts-expect-error dynamic geometry tag */}
+      <Geom args={geomArgs} />
+      <meshStandardMaterial map={textureRef.current ?? undefined} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function PaintModal({ shape, onClose, onSave }: {
+  shape: ShapeItem;
   onClose: () => void;
   onSave: (url: string) => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawingRef = useRef(false);
-  const [color, setColor] = useState(initColor);
-  const [size, setSize] = useState(8);
-
-  useEffect(() => {
-    const c = canvasRef.current!;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, c.width, c.height);
-    if (initial) {
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
-      img.src = initial;
-    }
-  }, [initial]);
-
-  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-    const c = canvasRef.current!;
-    const r = c.getBoundingClientRect();
-    const sx = c.width / r.width, sy = c.height / r.height;
-    if ('touches' in e && e.touches.length) {
-      return { x: (e.touches[0].clientX - r.left) * sx, y: (e.touches[0].clientY - r.top) * sy };
-    }
-    const m = e as React.MouseEvent;
-    return { x: (m.clientX - r.left) * sx, y: (m.clientY - r.top) * sy };
-  };
-
-  const start = (e: React.MouseEvent | React.TouchEvent) => {
-    drawingRef.current = true;
-    const p = getPos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, size / 2, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  const move = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!drawingRef.current) return;
-    e.preventDefault();
-    const p = getPos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, size / 2, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  const end = () => { drawingRef.current = false; };
-
-  const clearAll = () => {
-    const c = canvasRef.current!;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, c.width, c.height);
-  };
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [color, setColor] = useState(shape.color || '#ff4d6d');
+  const [size, setSize] = useState(24);
+  const [eraser, setEraser] = useState(false);
 
   const save = () => {
-    const url = canvasRef.current!.toDataURL('image/png');
-    onSave(url);
+    if (!canvasRef.current) return;
+    onSave(canvasRef.current.toDataURL('image/png'));
     onClose();
   };
 
+  const clearAll = () => {
+    const c = canvasRef.current; if (!c) return;
+    const ctx = c.getContext('2d')!;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.restore();
+  };
+
+  const importTexture = (f: File) => {
+    const c = canvasRef.current; if (!c) return;
+    const r = new FileReader();
+    r.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const ctx = c.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+      };
+      img.src = ev.target?.result as string;
+    };
+    r.readAsDataURL(f);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="game-card max-w-xl w-full space-y-3">
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 md:p-4">
+      <div className="game-card w-full max-w-5xl space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-lg">🎨 Textúra rajzolása</h3>
+          <h3 className="font-bold text-lg">🎨 3D Textúra festő — {shape.kind}</h3>
           <button className="game-btn bg-card text-sm py-1 px-3" onClick={onClose}>✕</button>
         </div>
-        <canvas ref={canvasRef} width={512} height={512}
-          className="w-full aspect-square rounded-lg border-2 border-border bg-white cursor-crosshair touch-none"
-          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-          onTouchStart={start} onTouchMove={move} onTouchEnd={end} />
-        <div className="flex items-center gap-2 flex-wrap">
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
-            className="h-9 w-12 cursor-pointer rounded border border-border" />
-          <div className="flex-1 flex items-center gap-2">
-            <span className="text-xs font-bold">Vastagság</span>
-            <input type="range" min={2} max={64} value={size} onChange={(e) => setSize(Number(e.target.value))} className="flex-1" />
-            <span className="text-xs w-8 text-right">{size}px</span>
+        <div className="grid md:grid-cols-[260px_1fr] gap-3">
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-bold mb-1">Szín</div>
+              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-10 rounded border border-border" />
+            </div>
+            <div>
+              <div className="text-xs font-bold mb-1">Ecset méret: {size}px</div>
+              <input type="range" min={2} max={120} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-full" />
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <button type="button" className={`game-btn text-xs py-2 ${eraser ? 'bg-card' : 'bg-primary text-primary-foreground'}`} onClick={() => setEraser(false)}>✏️ Ecset</button>
+              <button type="button" className={`game-btn text-xs py-2 ${eraser ? 'bg-primary text-primary-foreground' : 'bg-card'}`} onClick={() => setEraser(true)}>🧹 Radír</button>
+            </div>
+            <button type="button" className="game-btn bg-card text-xs py-2 w-full" onClick={clearAll}>🗑️ Üres</button>
+            <label className="block">
+              <span className="text-xs font-bold block mb-1">🖼️ Textúra import</span>
+              <input type="file" accept="image/*" className="text-xs w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:font-bold cursor-pointer"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importTexture(f); e.target.value = ''; }} />
+            </label>
+            <button type="button" className="game-btn-primary text-sm py-2 w-full" onClick={save}>✅ Alkalmaz</button>
+            <p className="text-[10px] text-muted-foreground">Bal egér: rajzol. Jobb egér / kerék: forgat / zoom.</p>
           </div>
-          <button type="button" className="game-btn bg-card text-sm py-1 px-3" onClick={clearAll}>🗑️ Üres</button>
-          <button type="button" className="game-btn-primary text-sm py-1 px-4" onClick={save}>✅ Alkalmaz</button>
+          <div className="rounded-xl overflow-hidden bg-[#1b1b2a] h-[60vh]">
+            <Canvas camera={{ position: [3, 2, 3], fov: 45 }} dpr={[1, 2]}>
+              <ambientLight intensity={0.7} />
+              <directionalLight position={[5, 5, 5]} intensity={0.9} />
+              <PaintableMesh shape={shape} canvasRef={canvasRef} color={color} size={size} eraser={eraser} />
+              <OrbitControls makeDefault mouseButtons={{ LEFT: undefined as any, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }} />
+            </Canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -244,13 +349,14 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
   const [mode, setMode] = useState<Mode>('translate');
   const [paintOpen, setPaintOpen] = useState(false);
 
-  const meshRefsRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  const meshRefsRef = useRef<Map<string, THREE.Object3D>>(new Map());
   const orbitRef = useRef<any>(null);
+  const draggingRef = useRef(false);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.Camera | null>(null);
 
-  const registerRef = useCallback((id: string, m: THREE.Mesh | null) => {
+  const registerRef = useCallback((id: string, m: THREE.Object3D | null) => {
     if (m) meshRefsRef.current.set(id, m); else meshRefsRef.current.delete(id);
   }, []);
 
@@ -262,6 +368,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
       scale: [1, 1, 1],
       rotation: [0, 0, 0],
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      textValue: kind === 'text' ? 'Szöveg' : undefined,
     };
     setShapes((s) => [...s, item]);
     setSelectedId(item.id);
@@ -293,10 +400,10 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
     playClick();
   };
 
-  // Keyboard shortcuts G/R/S like Blender
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key.toLowerCase() === 'g') setMode('translate');
       else if (e.key.toLowerCase() === 'r') setMode('rotate');
       else if (e.key.toLowerCase() === 's') setMode('scale');
@@ -325,9 +432,35 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
 
   const handleSubmit = () => {
     if (!glRef.current || !sceneRef.current || !cameraRef.current) return;
-    glRef.current.render(sceneRef.current, cameraRef.current);
+    glRef.current.render(sceneRef.current, cameraRef.current as THREE.Camera);
     const dataUrl = glRef.current.domElement.toDataURL('image/jpeg', 0.92);
     onSubmit(dataUrl);
+  };
+
+  const exportGLB = () => {
+    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+    // export only the user meshes (clone), not lights/grid
+    const group = new THREE.Group();
+    meshRefsRef.current.forEach((m) => group.add(m.clone(true)));
+    const exporter = new GLTFExporter();
+    exporter.parse(group, (result) => {
+      const blob = result instanceof ArrayBuffer
+        ? new Blob([result], { type: 'model/gltf-binary' })
+        : new Blob([JSON.stringify(result)], { type: 'model/gltf+json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'goryon-model.glb';
+      a.click();
+      URL.revokeObjectURL(url);
+    }, (err) => console.error(err), { binary: true });
+  };
+
+  const importTextureForSelected = (file: File) => {
+    const r = new FileReader();
+    r.onload = (ev) => updateSelected({ textureUrl: ev.target?.result as string });
+    r.readAsDataURL(file);
   };
 
   return (
@@ -350,7 +483,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
           <div className="font-bold text-sm mb-2">🧊 Alakzatok</div>
           <div className="grid grid-cols-2 gap-2">
             {SHAPE_BUTTONS.map((s) => (
-              <button key={s.id} type="button" className="game-btn bg-card text-sm py-2 px-2 hover-glow" onClick={() => addShape(s.id)}>
+              <button key={s.id} type="button" className="game-btn bg-card text-xs py-2 px-2 hover-glow" onClick={() => addShape(s.id)}>
                 {s.icon} {s.label}
               </button>
             ))}
@@ -361,18 +494,37 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
           <div className="space-y-3 border-t-2 border-border pt-3">
             <div className="font-bold text-sm">Kijelölt: {selected.kind}</div>
 
+            {selected.kind === 'text' && (
+              <div>
+                <div className="text-xs font-bold mb-1">Szöveg tartalom</div>
+                <input type="text" value={selected.textValue || ''}
+                  onChange={(e) => updateSelected({ textValue: e.target.value })}
+                  className="w-full px-2 py-1 text-sm rounded border-2 border-border bg-card" />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-1">
-              <button type="button" className="game-btn bg-card text-xs py-2" onClick={duplicateSelected}>📑 Másol (Ctrl+D)</button>
-              <button type="button" className="game-btn bg-destructive text-destructive-foreground text-xs py-2" onClick={deleteSelected}>🗑️ Töröl (Del)</button>
+              <button type="button" className="game-btn bg-card text-xs py-2" onClick={duplicateSelected}>📑 Másol</button>
+              <button type="button" className="game-btn bg-destructive text-destructive-foreground text-xs py-2" onClick={deleteSelected}>🗑️ Töröl</button>
             </div>
 
-            <button type="button" className="game-btn-primary text-xs py-2 w-full" onClick={() => setPaintOpen(true)}>
-              🎨 Textúra rajzolása
-            </button>
-            {selected.textureUrl && (
-              <button type="button" className="game-btn bg-card text-xs py-1 w-full" onClick={() => updateSelected({ textureUrl: undefined })}>
-                ❌ Textúra eltávolítása
-              </button>
+            {selected.kind !== 'text' && (
+              <>
+                <button type="button" className="game-btn-primary text-xs py-2 w-full" onClick={() => setPaintOpen(true)}>
+                  🎨 3D Textúra festő
+                </button>
+                <label className="block">
+                  <span className="text-[11px] text-muted-foreground mb-1 block">🖼️ Textúra import</span>
+                  <input type="file" accept="image/*"
+                    className="text-xs w-full file:mr-1 file:py-1 file:px-2 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:font-bold cursor-pointer"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) importTextureForSelected(f); e.target.value = ''; }} />
+                </label>
+                {selected.textureUrl && (
+                  <button type="button" className="game-btn bg-card text-xs py-1 w-full" onClick={() => updateSelected({ textureUrl: undefined })}>
+                    ❌ Textúra eltávolítása
+                  </button>
+                )}
+              </>
             )}
 
             <div>
@@ -397,7 +549,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
             </div>
 
             <p className="text-[10px] text-muted-foreground">
-              Tipp: A 3D gizmo nyilakkal húzhatod is. Kattints az alakzatra a kijelöléshez.
+              💡 Húzd a gizmot. A háttér alakzatok drag közben nem zavarják be a kijelölést.
             </p>
           </div>
         ) : (
@@ -416,7 +568,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
               sceneRef.current = scene;
               cameraRef.current = camera;
             }}
-            onPointerMissed={() => setSelectedId(null)}
+            onPointerMissed={() => { if (!draggingRef.current) setSelectedId(null); }}
           >
             <SceneContent
               shapes={shapes}
@@ -427,6 +579,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
               onTransform={onTransformChange}
               orbitRef={orbitRef}
               transformAttach={transformAttach}
+              draggingRef={draggingRef}
             />
           </Canvas>
         </div>
@@ -435,16 +588,18 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
           <button type="button" className="game-btn bg-card text-sm py-2 px-3" onClick={() => { setShapes([]); setSelectedId(null); }}>
             🗑️ Üres
           </button>
+          <button type="button" className="game-btn bg-card text-sm py-2 px-3" onClick={exportGLB} disabled={shapes.length === 0}>
+            💾 .glb letöltés
+          </button>
           <button type="button" className="game-btn-primary text-sm py-2 px-4 hover-glow" onClick={handleSubmit} disabled={disabled || shapes.length === 0}>
             ✅ KÉSZ!
           </button>
         </div>
       </div>
 
-      {paintOpen && selected && (
-        <TexturePaintModal
-          initial={selected.textureUrl}
-          color={selected.color}
+      {paintOpen && selected && selected.kind !== 'text' && (
+        <PaintModal
+          shape={selected}
           onClose={() => setPaintOpen(false)}
           onSave={(url) => updateSelected({ textureUrl: url })}
         />
