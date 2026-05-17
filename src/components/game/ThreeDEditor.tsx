@@ -20,6 +20,7 @@ interface ShapeItem {
   color: string;
   textureUrl?: string;
   textValue?: string;
+  groupId?: string | null;
 }
 
 const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
@@ -52,7 +53,7 @@ function makeTextureFromImage(url: string): THREE.Texture {
 function ShapeMesh({
   shape, selected, onPick, registerRef, draggingRef,
 }: {
-  shape: ShapeItem; selected: boolean; onPick: () => void;
+  shape: ShapeItem; selected: boolean; onPick: (additive: boolean) => void;
   registerRef: (id: string, m: THREE.Object3D | null) => void;
   draggingRef: React.MutableRefObject<boolean>;
 }) {
@@ -67,16 +68,27 @@ function ShapeMesh({
 
   const texture = useMemo(() => (shape.textureUrl ? makeTextureFromImage(shape.textureUrl) : null), [shape.textureUrl]);
 
-  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (draggingRef.current) return; // don't steal focus while gizmo drag
+  // Use onClick (pointerup with no drag) instead of onPointerDown so that
+  // dragging the TransformControls gizmo over a background mesh does NOT
+  // steal the selection. Click only fires when no movement happened.
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (draggingRef.current) return;
     e.stopPropagation();
-    onPick();
+    const native = e.nativeEvent as MouseEvent;
+    onPick(native.shiftKey);
+  };
+  // Disable raycasting on this mesh while gizmo is being dragged so it
+  // can never intercept the drag move events.
+  const raycast = (...args: any[]) => {
+    if (draggingRef.current) return;
+    // @ts-expect-error – delegate to default
+    return THREE.Mesh.prototype.raycast.apply(this, args as any);
   };
 
   if (shape.kind === 'text') {
     return (
       <group ref={textRef as any} position={shape.position} rotation={shape.rotation} scale={shape.scale}
-        onPointerDown={handlePointerDown}>
+        onClick={handleClick}>
         <Text fontSize={0.6} color={shape.color} anchorX="center" anchorY="middle" outlineWidth={selected ? 0.02 : 0} outlineColor="#888">
           {shape.textValue || 'Szöveg'}
         </Text>
@@ -99,7 +111,7 @@ function ShapeMesh({
     position: shape.position,
     rotation: shape.rotation,
     scale: shape.scale,
-    onPointerDown: handlePointerDown,
+    onClick: handleClick,
     castShadow: true,
     receiveShadow: true,
   };
