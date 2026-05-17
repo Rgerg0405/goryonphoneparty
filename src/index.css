@@ -139,6 +139,74 @@
   75% { transform: rotate(3deg); }
 }
 
+/* ============ iOS-style modern utilities ============ */
+@keyframes zoom-in {
+  0% { transform: scale(0.85); opacity: 0; filter: blur(8px); }
+  100% { transform: scale(1); opacity: 1; filter: blur(0); }
+}
+@keyframes slide-up {
+  0% { transform: translateY(24px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes spring-in {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes shine {
+  0% { background-position: -200% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-20vh) rotate(0); opacity: 1; }
+  100% { transform: translateY(120vh) rotate(720deg); opacity: 0; }
+}
+@keyframes blur-in {
+  0% { filter: blur(14px); opacity: 0; transform: scale(1.04); }
+  100% { filter: blur(0); opacity: 1; transform: scale(1); }
+}
+
+.animate-zoom-in { animation: zoom-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-spring-in { animation: spring-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-blur-in { animation: blur-in 0.5s ease-out both; }
+.animate-shine {
+  background: linear-gradient(110deg, transparent 25%, hsl(48 100% 80% / 0.6) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shine 2.4s linear infinite;
+}
+
+/* Glassmorphism iOS card */
+.ios-glass {
+  background: linear-gradient(135deg, hsl(0 0% 100% / 0.7), hsl(48 60% 92% / 0.55));
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid hsl(0 0% 100% / 0.5);
+  box-shadow: 0 10px 30px -8px hsl(0 0% 0% / 0.15), inset 0 1px 0 hsl(0 0% 100% / 0.6);
+  border-radius: 1.5rem;
+}
+:root.flash-commando .ios-glass {
+  background: linear-gradient(135deg, hsl(290 60% 18% / 0.75), hsl(320 60% 22% / 0.55));
+  border: 1px solid hsl(60 100% 60% / 0.4);
+  box-shadow: 0 10px 30px -8px hsl(320 100% 40% / 0.4), inset 0 1px 0 hsl(60 100% 60% / 0.2);
+}
+
+/* Smoother default transitions on common interactive elements */
+button, a, .mode-card, .game-card {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.22s ease,
+              background-color 0.22s ease,
+              filter 0.22s ease;
+}
+button:active, .mode-card:active { transform: scale(0.97); }
+
+/* Confetti element helper */
+.confetti-piece {
+  position: fixed; top: 0; width: 10px; height: 14px;
+  border-radius: 2px; pointer-events: none; z-index: 9999;
+  animation: confetti-fall 2.6s linear forwards;
+}
+
 .animate-marquee {
   animation: marquee 15s linear infinite;
 }
@@ -190,6 +258,7 @@
 .game-card {
   @apply bg-card border-2 border-border rounded-2xl p-4 shadow-lg;
   background: linear-gradient(135deg, hsl(48 60% 88%), hsl(48 60% 82%));
+  box-shadow: 0 8px 24px -10px hsl(0 0% 0% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.4);
 }
 
 .game-btn {
