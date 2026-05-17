@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Player, GameSettings } from '@/lib/gameTypes';
 import DrawingCanvas from './DrawingCanvas';
-import { playClick, playNotification, playWhoosh, playApplause } from '@/lib/sounds';
+import { playClick, playWhoosh, playApplause, fireConfetti } from '@/lib/sounds';
 
 interface Props {
   code: string; players: Player[]; playerId: string; username: string;
@@ -104,7 +104,11 @@ export default function AnimationGameView({ code, players, playerId, username, i
     const next = showingIdx + 1;
     channelRef.current?.send({ type: 'broadcast', event: 'show:next', payload: { idx: next } });
     setShowingIdx(next); setPlayFrame(0);
-    if (next >= Object.keys(animsRef.current).length) setPhase('end');
+    if (next >= Object.keys(animsRef.current).length) {
+      setPhase('end');
+      fireConfetti(80);
+      playApplause();
+    }
   }
 
   if (phase === 'end') {
