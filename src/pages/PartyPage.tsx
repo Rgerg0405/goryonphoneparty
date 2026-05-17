@@ -188,7 +188,7 @@ function PartyContent({ code, playerId, username, avatar }: {
               isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
           {game.phase === 'custom-mode' && game.settings.gameMode === 'shooter-3d' && (
-            <Shooter3DGameView players={game.players} playerId={playerId}
+            <Shooter3DGameView code={code} players={game.players} playerId={playerId}
               isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
 
