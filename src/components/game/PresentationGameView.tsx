@@ -114,6 +114,18 @@ export default function PresentationGameView({ code, players, playerId, username
   useEffect(() => { notesRef.current = notes; }, [notes]);
   useEffect(() => { titlesRef.current = titles; }, [titles]);
 
+  // refs mirroring state so the host can answer state:request without stale closures
+  const phaseRef = useRef<Phase>('intro');
+  const slidesRef = useRef<Slide[]>([]);
+  const presenterIdxRef = useRef(0);
+  const slideIdxRef = useRef(0);
+  const slideDeadlineRef = useRef(0);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { slidesRef.current = slides; }, [slides]);
+  useEffect(() => { presenterIdxRef.current = presenterIdx; }, [presenterIdx]);
+  useEffect(() => { slideIdxRef.current = slideIdx; }, [slideIdx]);
+  useEffect(() => { slideDeadlineRef.current = slideDeadline; }, [slideDeadline]);
+
   const presenter = players[presenterIdx];
   const presenterId = presenter?.player_id;
   const isPresenter = presenterId === playerId;
