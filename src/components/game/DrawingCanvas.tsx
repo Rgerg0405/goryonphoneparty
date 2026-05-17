@@ -100,9 +100,10 @@ interface Props {
   hideSubmit?: boolean;
   onChange?: (dataUrl: string) => void;
   darknessOverlay?: number; // 0..1 dark veil over canvas
+  compact?: boolean;
 }
 
-export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport, hideSubmit, onChange, darknessOverlay }: Props) {
+export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport, hideSubmit, onChange, darknessOverlay, compact }: Props) {
   const composedRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
   const [layers, setLayers] = useState<Layer[]>(() => {
@@ -925,9 +926,9 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
 
   return (
     <div className="flex flex-col items-center gap-3 w-full">
-      <div className="grid w-full max-w-[1200px] gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid w-full max-w-[1200px] gap-2 md:gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
         {/* SIDEBAR */}
-        <div className="game-card space-y-3 p-3 max-h-[80vh] overflow-y-auto">
+        <div className={`game-card space-y-3 p-3 overflow-y-auto ${compact ? 'max-h-[42vh] xl:max-h-[80vh]' : 'max-h-[80vh]'}`}>
           {/* Colors */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -1115,8 +1116,8 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
             )}
           </div>
 
-          <div className="overflow-auto rounded-xl border border-border bg-card/50 max-h-[70vh]">
-            <div className="min-w-max p-2">
+          <div className={`overflow-auto rounded-xl border border-border bg-card/50 ${compact ? 'max-h-[58vh]' : 'max-h-[70vh]'}`}>
+            <div className="min-w-max p-1 md:p-2">
               <div
                 className={`relative overflow-hidden rounded-lg bg-white ${isSecret ? 'blur-md' : ''}`}
                 style={{ width: `${DISPLAY_W * zoom}px`, height: `${DISPLAY_H * zoom}px` }}
