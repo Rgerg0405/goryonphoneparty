@@ -34,6 +34,16 @@ export interface GameSettings {
   // GeoGuesser
   geoRounds?: number;
   geoTime?: number;
+  // Music Quiz
+  musicRounds?: number;
+  musicGenre?: string;
+  // Slither
+  slitherDuration?: number;
+  // F1 Race
+  f1Laps?: number;
+  f1DesignTime?: number;
+  // PVP
+  pvpDuration?: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -57,6 +67,12 @@ export const DEFAULT_SETTINGS: GameSettings = {
   shooterTargets: 28,
   geoRounds: 5,
   geoTime: 90,
+  musicRounds: 8,
+  musicGenre: 'pop',
+  slitherDuration: 120,
+  f1Laps: 3,
+  f1DesignTime: 90,
+  pvpDuration: 120,
 };
 
 export interface GameEntry {
@@ -92,6 +108,10 @@ export const GAME_MODES = [
   { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Vicces prezi, közönség reakció', icon: '🎤' },
   { id: 'shooter-3d', name: '3D SHOOTER', description: 'Célbalövős 3D minijáték zenével', icon: '🎯' },
   { id: 'geoguesser', name: 'GEOGUESSER', description: 'Találd ki hol vagy a térképen!', icon: '🌍' },
+  { id: 'music-quiz', name: 'ZENEKITALÁLÓ', description: 'Halld a részletet, tippeld meg!', icon: '🎵' },
+  { id: 'slither', name: 'KUKAC', description: 'Slither.io stílusú multiplayer', icon: '🐍' },
+  { id: 'f1-race', name: 'F1 VERSENY', description: 'Tervezd az autód, majd verseny!', icon: '🏎️' },
+  { id: 'mc-pvp', name: 'KARD PVP', description: 'Karddal és aranyalmával harc', icon: '⚔️' },
 ];
 
 export const TIME_OPTIONS = [
