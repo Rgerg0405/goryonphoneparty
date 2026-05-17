@@ -82,6 +82,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
   const timerRef = useRef<any>(null);
   const timeRef = useRef(0);
   const submissionsRef = useRef<Set<string>>(new Set());
+  const advancingRef = useRef(false);
 
   const updateGame = useCallback((updates: Partial<GameState>) => {
     gameRef.current = { ...gameRef.current, ...updates };
@@ -139,6 +140,37 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     }, 12, 350);
 
     return (data || []) as unknown as GameEntry[];
+  }, []);
+
+  const fillMissingStepEntries = useCallback(async (g: GameState, step: number) => {
+    const { data } = await supabase
+      .from('game_entries')
+      .select('*')
+      .eq('party_id', g.partyId)
+      .eq('session_number', g.sessionNumber)
+      .eq('step', step)
+      .order('created_at', { ascending: false });
+
+    const existing = dedupeGameEntries((data || []) as unknown as GameEntry[]);
+    const presentChains = new Set(existing.filter((entry) => entry.step === step).map((entry) => entry.chain_index));
+    const playerCount = g.playerOrder.length;
+    const entryType = step % 2 === 0 ? 'text' : 'drawing';
+
+    for (let chainIndex = 0; chainIndex < playerCount; chainIndex++) {
+      if (presentChains.has(chainIndex)) continue;
+      const assignedPlayerId = g.playerOrder[(chainIndex + step) % playerCount];
+      const player = g.players.find((p) => p.player_id === assignedPlayerId);
+      await supabase.from('game_entries').insert({
+        party_id: g.partyId,
+        session_number: g.sessionNumber,
+        chain_index: chainIndex,
+        step,
+        player_id: assignedPlayerId,
+        player_name: player?.username || 'Ismeretlen',
+        entry_type: entryType,
+        content: entryType === 'text' ? '(nem válaszolt)' : getBlankCanvas(),
+      });
+    }
   }, []);
 
   const waitForAlbumEntries = useCallback(async (
@@ -205,10 +237,14 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
   }, [updateGame]);
 
   const advanceStep = useCallback(async () => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
     const g = gameRef.current;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
+    try {
     await waitForStepEntries(g.partyId, g.sessionNumber, g.step, g.playerOrder.length);
+    await fillMissingStepEntries(g, g.step);
 
     const nextStep = g.step + 1;
 
@@ -280,7 +316,10 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
     if (timeForPhase > 0) startTimer(timeForPhase);
     playNotification();
-  }, [loadAssignmentContent, playerId, startTimer, updateGame, waitForAlbumEntries, waitForStepEntries]);
+    } finally {
+      advancingRef.current = false;
+    }
+  }, [fillMissingStepEntries, loadAssignmentContent, playerId, startTimer, updateGame, waitForAlbumEntries, waitForStepEntries]);
 
   const handleTimerExpired = useCallback(async () => {
     const g = gameRef.current;
