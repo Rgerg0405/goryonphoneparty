@@ -20,20 +20,70 @@ const PRES_TEMPLATES = [
   'A titkos összetevő',
   'Konkurencia elemzés',
   'A 5 lépéses módszer',
+  'Mit mondanak a szakértők?',
+  'A nagy fordulópont',
+  'Egy kínos kudarc — és tanulság',
+  'A legdrágább hiba, amit elkövethetsz',
+  'Egy egyszerű trükk, ami mindent megváltoztat',
+  'Mire vágynak igazán az emberek?',
+  'Az ipar legjobban őrzött titka',
+  'Egy nap az életemben',
+  'Mi van, ha mindenki téved?',
+  'A 80/20 szabály alkalmazása',
+  'Egy meglepő összefüggés',
+  'A legfontosabb kérdés, amit fel kell tenni',
+  'Mit tanultam az elmúlt évben?',
+  'Egy bátor jóslat',
+  'A mítoszok lerombolása',
+  'Egy szokatlan analógia',
+  'Az első 100 nap',
+  'Élő demó (képzeletben)',
+  'A célközönség titkos vágyai',
+  'Egy konkrét példa',
+  'A tudomány állása ma',
+  'A nagy ellenfelek bemutatása',
+  'Mit ne csinálj soha',
+  'A költségvetés bontása',
+  'Egy vitatott álláspont',
+  'A következő lépés, amit MA megtehetsz',
 ];
 
-// Keyword bank used to pull random "real" photos from picsum/Unsplash
-const IMG_KEYWORDS = [
-  'technology','business','nature','space','city','people','food','animal','art','science',
-  'sport','travel','music','ocean','mountain','desert','forest','sunset','car','robot',
-  'astronaut','startup','vintage','retro','neon','minimal','abstract','architecture','sky','sunrise',
+// Keyword bank — heavy on people so most slides include humans
+const PEOPLE_KEYWORDS = [
+  'portrait','person','people','crowd','team','friends','family','speaker','student','child',
+  'businessman','businesswoman','smile','laugh','group','workers','workplace','meeting','presentation',
+  'audience','dance','musician','chef','athlete','runner','traveler','reader','engineer','scientist',
 ];
+const TOPIC_KEYWORDS = [
+  'technology','business','nature','space','city','food','animal','art','science','sport','travel',
+  'music','ocean','mountain','forest','sunset','car','robot','astronaut','startup','retro','neon',
+  'minimal','abstract','architecture','sky','sunrise','beach','party','office',
+];
+function pickKeyword() {
+  // ~65% chance to feature people
+  const pool = Math.random() < 0.65 ? PEOPLE_KEYWORDS : TOPIC_KEYWORDS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function imgUrlFor(seed: string, keyword: string) {
+  // Picsum is rock-solid and CORS-safe; the seed keeps the image stable across all clients.
+  // Keyword is encoded in the seed too so re-seeding stays deterministic.
+  const s = encodeURIComponent(`${seed}-${keyword}`);
+  return `https://picsum.photos/seed/${s}/1280/720`;
+}
+// People-only fallback so retries actually show humans
+function peopleFallbackUrl(seed: string) {
+  const s = encodeURIComponent(`${seed}-people`);
+  return `https://picsum.photos/seed/${s}/1280/720`;
+}
 
-function pickKeyword() { return IMG_KEYWORDS[Math.floor(Math.random() * IMG_KEYWORDS.length)]; }
-function imgUrlFor(seed: string) {
-  // Picsum is free, reliable and CORS-safe.
-  // Use the seed so the same slide stays the same image across players.
-  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/1280/720`;
+// Fisher-Yates shuffle for unique-template picks per talk
+function shuffle<T>(arr: T[]): T[] {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 type Phase = 'intro' | 'collect' | 'pres' | 'notes' | 'recap' | 'end';
@@ -63,6 +113,18 @@ export default function PresentationGameView({ code, players, playerId, username
 
   useEffect(() => { notesRef.current = notes; }, [notes]);
   useEffect(() => { titlesRef.current = titles; }, [titles]);
+
+  // refs mirroring state so the host can answer state:request without stale closures
+  const phaseRef = useRef<Phase>('intro');
+  const slidesRef = useRef<Slide[]>([]);
+  const presenterIdxRef = useRef(0);
+  const slideIdxRef = useRef(0);
+  const slideDeadlineRef = useRef(0);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { slidesRef.current = slides; }, [slides]);
+  useEffect(() => { presenterIdxRef.current = presenterIdx; }, [presenterIdx]);
+  useEffect(() => { slideIdxRef.current = slideIdx; }, [slideIdx]);
+  useEffect(() => { slideDeadlineRef.current = slideDeadline; }, [slideDeadline]);
 
   const presenter = players[presenterIdx];
   const presenterId = presenter?.player_id;
@@ -139,7 +201,40 @@ export default function PresentationGameView({ code, players, playerId, username
       }
     });
     ch.on('broadcast', { event: 'pres:end' }, () => setPhase('recap'));
-    ch.subscribe();
+    // late-join / out-of-sync clients: ask host for current state
+    ch.on('broadcast', { event: 'state:request' }, ({ payload }) => {
+      if (!isHost) return;
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'state:sync',
+        payload: {
+          to: payload?.from,
+          phase: phaseRef.current,
+          titles: titlesRef.current,
+          slides: slidesRef.current,
+          presenterIdx: presenterIdxRef.current,
+          slideIdx: slideIdxRef.current,
+          slideDeadline: slideDeadlineRef.current,
+        },
+      });
+    });
+    ch.on('broadcast', { event: 'state:sync' }, ({ payload }) => {
+      if (payload?.to && payload.to !== playerId) return;
+      if (payload.titles) { setTitles(payload.titles); titlesRef.current = payload.titles; }
+      if (Array.isArray(payload.slides)) setSlides(payload.slides);
+      if (typeof payload.presenterIdx === 'number') setPresenterIdx(payload.presenterIdx);
+      if (typeof payload.slideIdx === 'number') setSlideIdx(payload.slideIdx);
+      if (typeof payload.slideDeadline === 'number') setSlideDeadline(payload.slideDeadline);
+      if (payload.phase) setPhase(payload.phase);
+    });
+    ch.subscribe((s) => {
+      if (s === 'SUBSCRIBED' && !isHost) {
+        // Ask host to push latest state in case we missed earlier events
+        setTimeout(() => {
+          channelRef.current?.send({ type: 'broadcast', event: 'state:request', payload: { from: playerId } });
+        }, 400);
+      }
+    });
     channelRef.current = ch;
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,14 +293,17 @@ export default function PresentationGameView({ code, players, playerId, username
   }
 
   function startPresentation(idx: number, sourceTitles = titlesRef.current) {
+    // unique templates + unique emojis per talk (no repeats unless list shorter than slidesPerTalk)
+    const tplPool = shuffle(PRES_TEMPLATES);
+    const emojiPool = shuffle(SLIDE_EMOJIS);
     const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, (_, i) => {
       const kw = pickKeyword();
       const seed = `${code}-${idx}-${i}-${kw}-${Math.floor(Math.random() * 100000)}`;
       return {
-        emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
-        template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
+        emoji: emojiPool[i % emojiPool.length],
+        template: tplPool[i % tplPool.length],
         keyword: kw,
-        img: imgUrlFor(seed),
+        img: imgUrlFor(seed, kw),
       };
     });
     setPresenterIdx(idx); setSlideIdx(0); setSlides(newSlides); setGauge(0); setPhase('pres');
@@ -350,7 +448,7 @@ export default function PresentationGameView({ code, players, playerId, username
                 const el = e.currentTarget;
                 if (!el.dataset.fallback) {
                   el.dataset.fallback = '1';
-                  el.src = `https://source.unsplash.com/featured/1280x720/?${encodeURIComponent(slide.keyword)}`;
+                  el.src = peopleFallbackUrl(`${slideIdx}-${presenterIdx}-${slide.keyword}`);
                 }
               }}
             />
