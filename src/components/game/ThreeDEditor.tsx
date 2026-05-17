@@ -42,6 +42,117 @@ const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
 
 const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#7c3aed', '#000000', '#ffffff', '#f97316'];
 
+// ============ TEMPLATE CATALOG ============
+// Each template is a list of shape descriptors (no ids — generated on add).
+type TemplatePart = {
+  kind: ShapeKind;
+  position: [number, number, number];
+  scale: [number, number, number];
+  rotation?: [number, number, number];
+  color: string;
+  textValue?: string;
+};
+type Template = { id: string; icon: string; label: string; parts: TemplatePart[] };
+
+const TEMPLATES: Template[] = [
+  {
+    id: 'head', icon: '🗿', label: 'Emberi fej',
+    parts: [
+      { kind: 'sphere', position: [0, 1, 0], scale: [1.1, 1.2, 1.05], color: '#f1c27d' },                  // head
+      { kind: 'sphere', position: [-0.32, 1.15, 0.78], scale: [0.13, 0.13, 0.13], color: '#ffffff' },      // L eye white
+      { kind: 'sphere', position: [0.32, 1.15, 0.78], scale: [0.13, 0.13, 0.13], color: '#ffffff' },       // R eye white
+      { kind: 'sphere', position: [-0.32, 1.15, 0.86], scale: [0.06, 0.06, 0.06], color: '#1a1a1a' },      // L pupil
+      { kind: 'sphere', position: [0.32, 1.15, 0.86], scale: [0.06, 0.06, 0.06], color: '#1a1a1a' },       // R pupil
+      { kind: 'cone', position: [0, 0.95, 0.92], scale: [0.18, 0.35, 0.18], rotation: [Math.PI / 2, 0, 0], color: '#e0a86c' }, // nose
+      { kind: 'torus', position: [0, 0.65, 0.85], scale: [0.25, 0.08, 0.25], rotation: [Math.PI / 2, 0, 0], color: '#aa3344' }, // mouth
+      { kind: 'cylinder', position: [0, 0.05, 0], scale: [0.65, 0.4, 0.65], color: '#f1c27d' },            // neck
+    ],
+  },
+  {
+    id: 'snowman', icon: '⛄', label: 'Hóember',
+    parts: [
+      { kind: 'sphere', position: [0, 0.6, 0], scale: [1.3, 1.3, 1.3], color: '#ffffff' },
+      { kind: 'sphere', position: [0, 1.7, 0], scale: [0.95, 0.95, 0.95], color: '#ffffff' },
+      { kind: 'sphere', position: [0, 2.55, 0], scale: [0.7, 0.7, 0.7], color: '#ffffff' },
+      { kind: 'cone', position: [0, 2.6, 0.65], scale: [0.1, 0.3, 0.1], rotation: [Math.PI / 2, 0, 0], color: '#ff8c1a' },
+      { kind: 'sphere', position: [-0.18, 2.7, 0.55], scale: [0.06, 0.06, 0.06], color: '#000' },
+      { kind: 'sphere', position: [0.18, 2.7, 0.55], scale: [0.06, 0.06, 0.06], color: '#000' },
+      { kind: 'cylinder', position: [0, 3.05, 0], scale: [0.55, 0.08, 0.55], color: '#1a1a1a' },
+      { kind: 'cylinder', position: [0, 3.2, 0], scale: [0.4, 0.5, 0.4], color: '#1a1a1a' },
+    ],
+  },
+  {
+    id: 'tree', icon: '🌳', label: 'Fa',
+    parts: [
+      { kind: 'cylinder', position: [0, 0.5, 0], scale: [0.3, 1, 0.3], color: '#7a4a23' },
+      { kind: 'cone', position: [0, 1.6, 0], scale: [1, 1.2, 1], color: '#2c7a3a' },
+      { kind: 'cone', position: [0, 2.4, 0], scale: [0.8, 1, 0.8], color: '#3aa04a' },
+      { kind: 'cone', position: [0, 3.1, 0], scale: [0.55, 0.8, 0.55], color: '#4dba5a' },
+    ],
+  },
+  {
+    id: 'house', icon: '🏠', label: 'Ház',
+    parts: [
+      { kind: 'box', position: [0, 1, 0], scale: [2, 2, 2], color: '#f4d6b0' },
+      { kind: 'cone', position: [0, 2.6, 0], scale: [1.5, 1, 1.5], rotation: [0, Math.PI / 4, 0], color: '#b9302a' },
+      { kind: 'box', position: [0, 0.6, 1.01], scale: [0.45, 1.2, 0.05], color: '#5b3a1c' },
+      { kind: 'box', position: [-0.65, 1.3, 1.01], scale: [0.45, 0.45, 0.05], color: '#9fd6ff' },
+      { kind: 'box', position: [0.65, 1.3, 1.01], scale: [0.45, 0.45, 0.05], color: '#9fd6ff' },
+    ],
+  },
+  {
+    id: 'car', icon: '🚗', label: 'Autó',
+    parts: [
+      { kind: 'box', position: [0, 0.45, 0], scale: [2.4, 0.5, 1.1], color: '#e63946' },
+      { kind: 'box', position: [0, 0.95, 0], scale: [1.4, 0.5, 1.0], color: '#e63946' },
+      { kind: 'cylinder', position: [-0.75, 0.2, 0.6], scale: [0.3, 0.18, 0.3], rotation: [Math.PI / 2, 0, 0], color: '#1a1a1a' },
+      { kind: 'cylinder', position: [0.75, 0.2, 0.6], scale: [0.3, 0.18, 0.3], rotation: [Math.PI / 2, 0, 0], color: '#1a1a1a' },
+      { kind: 'cylinder', position: [-0.75, 0.2, -0.6], scale: [0.3, 0.18, 0.3], rotation: [Math.PI / 2, 0, 0], color: '#1a1a1a' },
+      { kind: 'cylinder', position: [0.75, 0.2, -0.6], scale: [0.3, 0.18, 0.3], rotation: [Math.PI / 2, 0, 0], color: '#1a1a1a' },
+    ],
+  },
+  {
+    id: 'robot', icon: '🤖', label: 'Robot',
+    parts: [
+      { kind: 'box', position: [0, 1.2, 0], scale: [1.4, 1.4, 1], color: '#cdd6dd' }, // torso
+      { kind: 'box', position: [0, 2.3, 0], scale: [0.9, 0.9, 0.9], color: '#cdd6dd' }, // head
+      { kind: 'sphere', position: [-0.2, 2.4, 0.46], scale: [0.1, 0.1, 0.1], color: '#ff4d6d' },
+      { kind: 'sphere', position: [0.2, 2.4, 0.46], scale: [0.1, 0.1, 0.1], color: '#ff4d6d' },
+      { kind: 'cylinder', position: [-1, 1.2, 0], scale: [0.18, 0.9, 0.18], color: '#7a8085' }, // L arm
+      { kind: 'cylinder', position: [1, 1.2, 0], scale: [0.18, 0.9, 0.18], color: '#7a8085' },  // R arm
+      { kind: 'box', position: [-0.35, 0.25, 0], scale: [0.4, 0.7, 0.4], color: '#7a8085' },     // L leg
+      { kind: 'box', position: [0.35, 0.25, 0], scale: [0.4, 0.7, 0.4], color: '#7a8085' },      // R leg
+    ],
+  },
+  {
+    id: 'flower', icon: '🌸', label: 'Virág',
+    parts: [
+      { kind: 'cylinder', position: [0, 0.8, 0], scale: [0.05, 0.8, 0.05], color: '#2f8a3a' },
+      { kind: 'sphere', position: [0, 1.6, 0], scale: [0.25, 0.25, 0.25], color: '#ffeb3b' },
+      ...Array.from({ length: 6 }, (_, i) => {
+        const a = (i / 6) * Math.PI * 2;
+        return {
+          kind: 'sphere' as ShapeKind,
+          position: [Math.cos(a) * 0.45, 1.6, Math.sin(a) * 0.45] as [number, number, number],
+          scale: [0.28, 0.18, 0.28] as [number, number, number],
+          color: '#ff5e9a',
+        };
+      }),
+    ],
+  },
+  {
+    id: 'rocket', icon: '🚀', label: 'Rakéta',
+    parts: [
+      { kind: 'cylinder', position: [0, 1.5, 0], scale: [0.45, 1.5, 0.45], color: '#f5f5f5' },
+      { kind: 'cone', position: [0, 3.3, 0], scale: [0.45, 0.6, 0.45], color: '#e63946' },
+      { kind: 'cone', position: [-0.5, 0.4, 0], scale: [0.2, 0.6, 0.4], rotation: [0, 0, -0.3], color: '#e63946' },
+      { kind: 'cone', position: [0.5, 0.4, 0], scale: [0.2, 0.6, 0.4], rotation: [0, 0, 0.3], color: '#e63946' },
+      { kind: 'sphere', position: [0, 1.9, 0.46], scale: [0.18, 0.18, 0.05], color: '#5cb8ff' },
+      { kind: 'cone', position: [0, -0.05, 0], scale: [0.3, 0.5, 0.3], rotation: [Math.PI, 0, 0], color: '#ff7b00' },
+    ],
+  },
+];
+
 function ShapeMesh({
   shape, selected, onPick, registerRef, draggingRef,
 }: {
@@ -425,6 +536,24 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
     playClick();
   }, []);
 
+  const addTemplate = useCallback((tpl: Template) => {
+    const gid = crypto.randomUUID();
+    const offset: [number, number, number] = [Math.random() * 1.5 - 0.75, 0, Math.random() * 1.5 - 0.75];
+    const items: ShapeItem[] = tpl.parts.map((p) => ({
+      id: crypto.randomUUID(),
+      kind: p.kind,
+      position: [p.position[0] + offset[0], p.position[1] + offset[1], p.position[2] + offset[2]],
+      scale: p.scale,
+      rotation: p.rotation || [0, 0, 0],
+      color: p.color,
+      textValue: p.kind === 'text' ? p.textValue : undefined,
+      groupId: gid,
+    }));
+    setShapes((s) => [...s, ...items]);
+    setSelectedIds(items.map((i) => i.id));
+    playClick();
+  }, []);
+
   const selected = shapes.find((s) => s.id === primaryId) || null;
 
   const updateSelected = (patch: Partial<ShapeItem>) => {
@@ -612,6 +741,21 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <div className="font-bold text-sm mb-2">📚 Sablonok</div>
+          <div className="grid grid-cols-2 gap-2 max-h-[280px] overflow-y-auto pr-1">
+            {TEMPLATES.map((t) => (
+              <button key={t.id} type="button"
+                className="game-btn bg-card text-xs py-3 px-2 hover-glow flex flex-col items-center gap-1"
+                onClick={() => addTemplate(t)}>
+                <span className="text-2xl">{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">Egy sablon = egy kész csoport, együtt mozog.</p>
         </div>
 
         {selected ? (

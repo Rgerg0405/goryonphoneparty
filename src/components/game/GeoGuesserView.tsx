@@ -8,34 +8,68 @@ interface Props {
   isHost: boolean; settings: GameSettings; onFinish: () => void;
 }
 
-type Loc = { id: string; name: string; lat: number; lng: number };
+type LatLng = { lat: number; lng: number };
+type Loc = { id: string; lat: number; lng: number };
+type Guess = { playerId: string; username: string; lat: number; lng: number; distance: number; score: number };
+type Phase = 'loading' | 'guessing' | 'reveal' | 'end';
 
-const LOCATIONS: Loc[] = [
-  { id: 'paris', name: 'Eiffel-torony, Párizs', lat: 48.8584, lng: 2.2945 },
-  { id: 'tokyo', name: 'Shibuya, Tokió', lat: 35.6595, lng: 139.7005 },
-  { id: 'nyc', name: 'Times Square, New York', lat: 40.758, lng: -73.985 },
-  { id: 'sydney', name: 'Operaház, Sydney', lat: -33.8568, lng: 151.2153 },
-  { id: 'rio', name: 'Megváltó Krisztus, Rio', lat: -22.9519, lng: -43.2105 },
-  { id: 'cairo', name: 'Gízai piramisok', lat: 29.9792, lng: 31.1342 },
-  { id: 'london', name: 'Big Ben, London', lat: 51.4994, lng: -0.1244 },
-  { id: 'moscow', name: 'Kreml, Moszkva', lat: 55.7520, lng: 37.6175 },
-  { id: 'dubai', name: 'Burj Khalifa, Dubaj', lat: 25.1972, lng: 55.2744 },
-  { id: 'reykjavik', name: 'Reykjavík', lat: 64.1466, lng: -21.9426 },
-  { id: 'bangkok', name: 'Bangkok', lat: 13.7563, lng: 100.5018 },
-  { id: 'rome', name: 'Colosseum, Róma', lat: 41.8902, lng: 12.4922 },
-  { id: 'berlin', name: 'Brandenburgi kapu, Berlin', lat: 52.5163, lng: 13.3777 },
-  { id: 'capetown', name: 'Cape Town', lat: -33.9249, lng: 18.4241 },
-  { id: 'buenosaires', name: 'Buenos Aires', lat: -34.6037, lng: -58.3816 },
-  { id: 'budapest', name: 'Parlament, Budapest', lat: 47.5072, lng: 19.0455 },
-  { id: 'venice', name: 'Velence', lat: 45.4408, lng: 12.3155 },
-  { id: 'istanbul', name: 'Hagia Sophia, Isztambul', lat: 41.0086, lng: 28.9802 },
-  { id: 'machu', name: 'Machu Picchu', lat: -13.1631, lng: -72.5450 },
-  { id: 'taj', name: 'Taj Mahal', lat: 27.1751, lng: 78.0421 },
+declare global { interface Window { google?: any; __initGeoMaps?: () => void; __geoMapsLoaded?: boolean; } }
+
+// ============ Google Maps loader ============
+let mapsPromise: Promise<void> | null = null;
+function loadMaps(): Promise<void> {
+  if (mapsPromise) return mapsPromise;
+  if (window.google?.maps?.StreetViewPanorama) return Promise.resolve();
+  mapsPromise = new Promise<void>((resolve, reject) => {
+    const key = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY;
+    const channel = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID;
+    if (!key) return reject(new Error('Missing Google Maps key'));
+    window.__initGeoMaps = () => { window.__geoMapsLoaded = true; resolve(); };
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&loading=async&callback=__initGeoMaps&channel=${channel ?? ''}`;
+    s.async = true; s.defer = true; s.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(s);
+  });
+  return mapsPromise;
+}
+
+// ============ Random location finder (uses StreetViewService) ============
+// Pool of broad regions known to have street view. We pick a random region, then a random point inside,
+// then ask the StreetViewService for the nearest pano within a radius.
+const REGIONS: { name: string; latMin: number; latMax: number; lngMin: number; lngMax: number }[] = [
+  { name: 'Europe', latMin: 36, latMax: 60, lngMin: -10, lngMax: 30 },
+  { name: 'USA', latMin: 26, latMax: 48, lngMin: -123, lngMax: -73 },
+  { name: 'Japan', latMin: 31, latMax: 43, lngMin: 130, lngMax: 144 },
+  { name: 'Brazil', latMin: -30, latMax: -5, lngMin: -58, lngMax: -38 },
+  { name: 'SE Asia', latMin: -5, latMax: 22, lngMin: 95, lngMax: 130 },
+  { name: 'Australia', latMin: -38, latMax: -22, lngMin: 115, lngMax: 153 },
+  { name: 'Mexico', latMin: 16, latMax: 31, lngMin: -110, lngMax: -88 },
+  { name: 'Argentina', latMin: -45, latMax: -25, lngMin: -72, lngMax: -58 },
+  { name: 'South Africa', latMin: -34, latMax: -25, lngMin: 18, lngMax: 32 },
+  { name: 'Turkey', latMin: 36, latMax: 41, lngMin: 27, lngMax: 44 },
+  { name: 'UK', latMin: 50, latMax: 58, lngMin: -6, lngMax: 1 },
+  { name: 'Canada', latMin: 43, latMax: 55, lngMin: -125, lngMax: -65 },
 ];
 
-const WORLD_MAP_URL = 'https://upload.wikimedia.org/wikipedia/commons/8/83/Equirectangular_projection_SW.jpg';
+async function findRandomStreetViewLoc(svc: any, maxTries = 15): Promise<LatLng> {
+  for (let i = 0; i < maxTries; i++) {
+    const r = REGIONS[Math.floor(Math.random() * REGIONS.length)];
+    const lat = r.latMin + Math.random() * (r.latMax - r.latMin);
+    const lng = r.lngMin + Math.random() * (r.lngMax - r.lngMin);
+    const found = await new Promise<LatLng | null>((resolve) => {
+      svc.getPanorama({ location: { lat, lng }, radius: 50000, source: 'outdoor' }, (data: any, status: any) => {
+        if (status === 'OK' && data?.location?.latLng) {
+          resolve({ lat: data.location.latLng.lat(), lng: data.location.latLng.lng() });
+        } else resolve(null);
+      });
+    });
+    if (found) return found;
+  }
+  // fallback: a known place
+  return { lat: 48.8584, lng: 2.2945 };
+}
 
-function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+function haversine(a: LatLng, b: LatLng) {
   const R = 6371;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
   const dLng = (b.lng - a.lng) * Math.PI / 180;
@@ -44,54 +78,84 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
 }
-
-function scoreForDistance(km: number) {
-  // 0 km = 5000 pts, 10000+ km = 0 pts; exponential falloff
-  return Math.max(0, Math.round(5000 * Math.exp(-km / 2000)));
-}
-
-type Phase = 'guessing' | 'reveal' | 'end';
-type Guess = { playerId: string; username: string; lat: number; lng: number; distance: number; score: number };
+function scoreForDistance(km: number) { return Math.max(0, Math.round(5000 * Math.exp(-km / 2000))); }
 
 export default function GeoGuesserView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const totalRounds = Math.max(1, Math.min(10, settings.geoRounds ?? 5));
   const roundTime = Math.max(20, Math.min(180, settings.geoTime ?? 90));
 
   const channelRef = useRef<any>(null);
+  const panoDivRef = useRef<HTMLDivElement>(null);
+  const mapDivRef = useRef<HTMLDivElement>(null);
+  const resultMapDivRef = useRef<HTMLDivElement>(null);
+  const panoRef = useRef<any>(null);
+  const mapRef = useRef<any>(null);
+  const guessMarkerRef = useRef<any>(null);
+  const svcRef = useRef<any>(null);
+  const resultMapRef = useRef<any>(null);
+
+  const [mapsReady, setMapsReady] = useState(false);
   const [round, setRound] = useState(0);
-  const [phase, setPhase] = useState<Phase>('guessing');
+  const [phase, setPhase] = useState<Phase>('loading');
   const [loc, setLoc] = useState<Loc | null>(null);
   const [deadline, setDeadline] = useState(0);
   const [timeLeft, setTimeLeft] = useState(roundTime);
-  const [myGuess, setMyGuess] = useState<{ lat: number; lng: number } | null>(null);
+  const [myGuess, setMyGuess] = useState<LatLng | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const guessesRef = useRef<Guess[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
   const scoresRef = useRef<Record<string, number>>({});
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   useEffect(() => { guessesRef.current = guesses; }, [guesses]);
   useEffect(() => { scoresRef.current = scores; }, [scores]);
 
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const panRef = useRef<{ dragging: boolean; sx: number; sy: number; ox: number; oy: number; moved: boolean }>({
-    dragging: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: false,
-  });
-  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [round]);
+  // Load Google Maps once
+  useEffect(() => {
+    loadMaps().then(() => { svcRef.current = new window.google.maps.StreetViewService(); setMapsReady(true); })
+      .catch((e) => console.error('Maps load failed', e));
+  }, []);
 
-  const usedLocsRef = useRef<Set<string>>(new Set());
+  // Setup channel
+  useEffect(() => {
+    const ch = supabase.channel(`geo-${code}`);
+    ch.on('broadcast', { event: 'geo:round' }, ({ payload }) => {
+      applyRoundStart(payload.round, payload.loc, payload.deadline);
+    });
+    ch.on('broadcast', { event: 'geo:guess' }, ({ payload }) => {
+      setGuesses((all) => {
+        if (all.find((g) => g.playerId === payload.playerId)) return all;
+        const next = [...all, payload as Guess]; guessesRef.current = next;
+        if (isHost && next.length >= players.length) setTimeout(() => hostReveal(next), 400);
+        return next;
+      });
+      playPop();
+    });
+    ch.on('broadcast', { event: 'geo:reveal' }, ({ payload }) => {
+      setGuesses(payload.guesses); setScores(payload.scores); scoresRef.current = payload.scores;
+      setPhase('reveal'); playSubmit();
+    });
+    ch.on('broadcast', { event: 'geo:end' }, ({ payload }) => { setScores(payload.scores); setPhase('end'); });
+    ch.subscribe((s) => {
+      if (s === 'SUBSCRIBED' && isHost && round === 0 && !loc) {
+        // wait for maps
+        const tryStart = () => {
+          if (svcRef.current) hostStartRound(1);
+          else setTimeout(tryStart, 300);
+        };
+        setTimeout(tryStart, 500);
+      }
+    });
+    channelRef.current = ch;
+    return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
-  function pickRandomLoc(): Loc {
-    const remaining = LOCATIONS.filter((l) => !usedLocsRef.current.has(l.id));
-    const pool = remaining.length > 0 ? remaining : LOCATIONS;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    usedLocsRef.current.add(pick.id);
-    return pick;
-  }
-
-  function hostStartRound(idx: number) {
-    const l = pickRandomLoc();
+  async function hostStartRound(idx: number) {
+    if (!svcRef.current) return;
+    const p = await findRandomStreetViewLoc(svcRef.current);
+    const l: Loc = { id: `r${idx}-${Date.now()}`, lat: p.lat, lng: p.lng };
     const d = Date.now() + roundTime * 1000;
     channelRef.current?.send({ type: 'broadcast', event: 'geo:round', payload: { round: idx, loc: l, deadline: d } });
     applyRoundStart(idx, l, d);
@@ -103,59 +167,17 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     playNotification();
   }
 
-  // Setup channel
-  useEffect(() => {
-    const ch = supabase.channel(`geo-${code}`);
-    ch.on('broadcast', { event: 'geo:round' }, ({ payload }) => {
-      applyRoundStart(payload.round, payload.loc, payload.deadline);
-    });
-    ch.on('broadcast', { event: 'geo:guess' }, ({ payload }) => {
-      setGuesses((all) => {
-        if (all.find((g) => g.playerId === payload.playerId)) return all;
-        const next = [...all, payload as Guess];
-        guessesRef.current = next;
-        // host auto-reveals when all guessed
-        if (isHost && next.length >= players.length) {
-          setTimeout(() => hostReveal(next), 400);
-        }
-        return next;
-      });
-      playPop();
-    });
-    ch.on('broadcast', { event: 'geo:reveal' }, ({ payload }) => {
-      setGuesses(payload.guesses);
-      setScores(payload.scores);
-      scoresRef.current = payload.scores;
-      setPhase('reveal');
-      playSubmit();
-    });
-    ch.on('broadcast', { event: 'geo:end' }, ({ payload }) => {
-      setScores(payload.scores);
-      setPhase('end');
-    });
-    ch.subscribe((s) => {
-      if (s === 'SUBSCRIBED' && isHost && round === 0 && !loc) {
-        setTimeout(() => hostStartRound(1), 500);
-      }
-    });
-    channelRef.current = ch;
-    return () => { supabase.removeChannel(ch); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
-
   function hostReveal(currentGuesses?: Guess[]) {
     const gs = currentGuesses || guessesRef.current;
-    // fill in zero scores for missing players
     const filled = players.map((p) => {
       const g = gs.find((x) => x.playerId === p.player_id);
-      if (g) return g;
-      return { playerId: p.player_id, username: p.username, lat: 0, lng: 0, distance: 99999, score: 0 } as Guess;
+      return g || ({ playerId: p.player_id, username: p.username, lat: 0, lng: 0, distance: 99999, score: 0 } as Guess);
     });
-    const nextScores = { ...scoresRef.current };
-    filled.forEach((g) => { nextScores[g.playerId] = (nextScores[g.playerId] || 0) + g.score; });
-    scoresRef.current = nextScores;
-    channelRef.current?.send({ type: 'broadcast', event: 'geo:reveal', payload: { guesses: filled, scores: nextScores } });
-    setGuesses(filled); setScores(nextScores); setPhase('reveal');
+    const next = { ...scoresRef.current };
+    filled.forEach((g) => { next[g.playerId] = (next[g.playerId] || 0) + g.score; });
+    scoresRef.current = next;
+    channelRef.current?.send({ type: 'broadcast', event: 'geo:reveal', payload: { guesses: filled, scores: next } });
+    setGuesses(filled); setScores(next); setPhase('reveal');
   }
 
   // timer
@@ -164,14 +186,97 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     const t = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setTimeLeft(left);
-      if (left <= 0) {
-        clearInterval(t);
-        if (isHost) setTimeout(() => hostReveal(), 400);
-      }
+      if (left <= 0) { clearInterval(t); if (isHost) setTimeout(() => hostReveal(), 400); }
     }, 250);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, deadline, isHost]);
+
+  // ===== Init StreetViewPanorama when a new round starts =====
+  useEffect(() => {
+    if (!mapsReady || phase !== 'guessing' || !loc || !panoDivRef.current) return;
+    const g = window.google;
+    if (!panoRef.current) {
+      panoRef.current = new g.maps.StreetViewPanorama(panoDivRef.current, {
+        position: { lat: loc.lat, lng: loc.lng },
+        pov: { heading: Math.random() * 360, pitch: 0 },
+        zoom: 0,
+        addressControl: false,
+        showRoadLabels: false,
+        linksControl: true,
+        panControl: true,
+        zoomControl: true,
+        fullscreenControl: false,
+        motionTracking: false,
+        motionTrackingControl: false,
+        enableCloseButton: false,
+      });
+    } else {
+      panoRef.current.setPosition({ lat: loc.lat, lng: loc.lng });
+      panoRef.current.setPov({ heading: Math.random() * 360, pitch: 0 });
+      panoRef.current.setZoom(0);
+    }
+  }, [mapsReady, phase, loc?.id]);
+
+  // ===== Init guessing mini-map =====
+  useEffect(() => {
+    if (!mapsReady || phase !== 'guessing' || !mapDivRef.current) return;
+    const g = window.google;
+    if (!mapRef.current) {
+      mapRef.current = new g.maps.Map(mapDivRef.current, {
+        center: { lat: 20, lng: 0 }, zoom: 1, streetViewControl: false, fullscreenControl: false,
+        mapTypeControl: false, gestureHandling: 'greedy', minZoom: 1,
+        zoomControl: true, disableDefaultUI: false,
+      });
+      mapRef.current.addListener('click', (e: any) => {
+        if (submittedRef.current) return;
+        const lat = e.latLng.lat(); const lng = e.latLng.lng();
+        setMyGuess({ lat, lng });
+        if (guessMarkerRef.current) guessMarkerRef.current.setPosition({ lat, lng });
+        else guessMarkerRef.current = new g.maps.Marker({ position: { lat, lng }, map: mapRef.current });
+        playClick();
+      });
+    } else {
+      mapRef.current.setCenter({ lat: 20, lng: 0 }); mapRef.current.setZoom(1);
+      if (guessMarkerRef.current) { guessMarkerRef.current.setMap(null); guessMarkerRef.current = null; }
+    }
+  }, [mapsReady, phase, loc?.id]);
+
+  // keep submitted ref
+  const submittedRef = useRef(false);
+  useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+
+  // trigger map resize when toggling expanded
+  useEffect(() => {
+    if (!mapRef.current) return;
+    setTimeout(() => window.google?.maps?.event?.trigger(mapRef.current, 'resize'), 200);
+  }, [mapExpanded]);
+
+  // ===== Reveal map =====
+  useEffect(() => {
+    if (!mapsReady || phase !== 'reveal' || !loc || !resultMapDivRef.current) return;
+    const g = window.google;
+    const map = new g.maps.Map(resultMapDivRef.current, {
+      center: { lat: loc.lat, lng: loc.lng }, zoom: 3, mapTypeControl: false, streetViewControl: false,
+      fullscreenControl: false,
+    });
+    resultMapRef.current = map;
+    new g.maps.Marker({ position: { lat: loc.lat, lng: loc.lng }, map, label: '🎯', title: 'Igazi hely' });
+    const bounds = new g.maps.LatLngBounds();
+    bounds.extend({ lat: loc.lat, lng: loc.lng });
+    guesses.forEach((gu) => {
+      if (gu.lat === 0 && gu.lng === 0) return;
+      const m = new g.maps.Marker({ position: { lat: gu.lat, lng: gu.lng }, map, label: gu.username[0]?.toUpperCase() });
+      bounds.extend({ lat: gu.lat, lng: gu.lng });
+      new g.maps.Polyline({
+        path: [{ lat: gu.lat, lng: gu.lng }, { lat: loc.lat, lng: loc.lng }],
+        map, strokeColor: '#3b82f6', strokeOpacity: 0.7, strokeWeight: 2,
+        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 }, offset: '0', repeat: '12px' }],
+      });
+      m.setMap(map);
+    });
+    map.fitBounds(bounds, 60);
+  }, [mapsReady, phase, loc?.id, guesses]);
 
   function submitGuess() {
     if (!myGuess || !loc || submitted) return;
@@ -185,26 +290,16 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
       if (isHost && next.length >= players.length) setTimeout(() => hostReveal(next), 400);
       return next;
     });
-    setSubmitted(true);
-    playSubmit();
+    setSubmitted(true); playSubmit();
   }
 
   function hostNext() {
     if (round >= totalRounds) {
       channelRef.current?.send({ type: 'broadcast', event: 'geo:end', payload: { scores: scoresRef.current } });
-      setPhase('end');
-      return;
+      setPhase('end'); return;
     }
     hostStartRound(round + 1);
   }
-
-  // Stable per-round street view URL so the iframe doesn't re-mount on every render
-  const stableStreetViewSrc = useMemo(() => {
-    if (!loc) return '';
-    const heading = Math.floor(Math.random() * 360);
-    return `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${heading},0,0,0&output=svembed`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc?.id, round]);
 
   const sortedScores = useMemo(() => (
     players.map((p) => ({ playerId: p.player_id, username: p.username, score: scores[p.player_id] || 0 }))
@@ -215,10 +310,10 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
 
   if (phase === 'end') {
     return (
-      <div className="max-w-xl mx-auto p-4 space-y-4 text-center">
+      <div className="max-w-xl mx-auto p-4 space-y-4 text-center animate-zoom-in">
         <div className="text-6xl animate-bounce">🌍</div>
         <h2 className="text-3xl font-bold">GeoGuesser vége!</h2>
-        <div className="game-card text-left">
+        <div className="game-card ios-glass text-left">
           <div className="font-bold mb-2">🏆 Végeredmény</div>
           {sortedScores.map((s, i) => (
             <div key={s.playerId} className="flex justify-between border-b border-border/40 py-1">
@@ -232,189 +327,114 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     );
   }
 
+  if (phase === 'reveal') {
+    return (
+      <div className="max-w-5xl mx-auto p-2 md:p-4 space-y-3 animate-blur-in">
+        <div className="game-card ios-glass text-center py-2">
+          <div className="font-bold">🌍 Kör {round}/{totalRounds} — eredmény</div>
+        </div>
+        <div className="rounded-2xl overflow-hidden border-2 border-border shadow-2xl" style={{ height: '55vh' }}>
+          <div ref={resultMapDivRef} className="w-full h-full" />
+        </div>
+        <div className="game-card ios-glass space-y-1 text-sm">
+          {[...guesses].sort((a, b) => b.score - a.score).map((g) => (
+            <div key={g.playerId} className="flex justify-between items-center border-b border-border/40 py-1">
+              <span className="font-medium">{g.username}</span>
+              <span className="text-xs text-muted-foreground">{g.distance.toFixed(0)} km</span>
+              <span className="font-bold text-primary">+{g.score}</span>
+            </div>
+          ))}
+          {isHost && (
+            <button className="game-btn-primary w-full mt-2" onClick={hostNext}>
+              {round >= totalRounds ? '🏁 Befejezés' : '▶️ Következő kör'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ===== GUESSING: fullscreen pano + mini map bottom-right =====
   return (
-    <div className="max-w-7xl mx-auto p-2 md:p-4 space-y-3">
-      <div className="game-card grid grid-cols-3 gap-2 items-center py-2 px-3 text-xs md:text-sm text-center">
-        <div className="font-bold">🌍 Kör {round}/{totalRounds}</div>
-        <div className={`font-bold text-xl ${timeLeft <= 10 && phase === 'guessing' ? 'text-destructive animate-pulse' : ''}`}>
-          ⏱️ {phase === 'guessing' ? `${timeLeft}mp` : 'EREDMÉNY'}
-        </div>
-        <div className="font-bold">🎯 {guesses.length}/{players.length} tipp</div>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-3">
-        {/* Street view */}
-        <div className="game-card p-2">
-          <div className="text-xs font-bold mb-1 text-center">🛣️ Nézz körül!</div>
-          <div className="relative rounded-xl overflow-hidden bg-card" style={{ aspectRatio: '16/10' }}>
-            {loc && (
-              <iframe
-                key={loc.id + round}
-                title="Street view"
-                src={stableStreetViewSrc}
-                className="w-full h-full border-0"
-                allow="accelerometer; gyroscope; fullscreen"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            )}
-            {phase === 'guessing' && (
-              <>
-                <div className="absolute top-0 left-0 right-0 h-10 bg-card/95 backdrop-blur pointer-events-none flex items-center justify-center text-xs font-bold">
-                  🕵️ Hol vagy? Fedezd fel a környéket!
-                </div>
-                <div className="absolute bottom-0 left-0 h-7 w-44 bg-card/90 pointer-events-none" />
-              </>
-            )}
+    <div className="fixed inset-0 bg-black z-40">
+      {/* Loading overlay */}
+      {(!mapsReady || !loc) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background z-30 text-center">
+          <div>
+            <div className="text-6xl animate-spin">🌍</div>
+            <p className="mt-3 font-bold">Hely keresése a világban...</p>
           </div>
         </div>
+      )}
 
-        {/* Map */}
-        <div className="game-card p-2">
-          <div className="text-xs font-bold mb-1 text-center">
-            {phase === 'guessing' ? '🗺️ Kattints a térképre! (görgő/+ − = zoom, húzd a pánhoz)' : '🗺️ Eredmények'}
-          </div>
-          <div className="relative">
-            <div
-              className="relative w-full overflow-hidden rounded-xl border-2 border-border cursor-crosshair select-none touch-none bg-card"
-              style={{ aspectRatio: '2/1' }}
-              onWheel={(e) => {
-                e.preventDefault();
-                const rect = e.currentTarget.getBoundingClientRect();
-                const cx = (e.clientX - rect.left) / rect.width;
-                const cy = (e.clientY - rect.top) / rect.height;
-                const delta = e.deltaY > 0 ? 0.85 : 1.18;
-                const newZoom = Math.max(1, Math.min(8, zoom * delta));
-                const k = newZoom / zoom;
-                setPan((p) => ({ x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }));
-                setZoom(newZoom);
-              }}
-              onPointerDown={(e) => {
-                (e.currentTarget as any).setPointerCapture?.(e.pointerId);
-                panRef.current = { dragging: true, sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y, moved: false };
-              }}
-              onPointerMove={(e) => {
-                const s = panRef.current; if (!s.dragging) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const dx = (e.clientX - s.sx) / rect.width;
-                const dy = (e.clientY - s.sy) / rect.height;
-                if (Math.abs(e.clientX - s.sx) > 4 || Math.abs(e.clientY - s.sy) > 4) s.moved = true;
-                setPan({ x: s.ox + dx, y: s.oy + dy });
-              }}
-              onPointerUp={(e) => {
-                const s = panRef.current; s.dragging = false;
-                if (!s.moved && phase === 'guessing' && !submitted) {
-                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                  const rawX = (e.clientX - rect.left) / rect.width;
-                  const rawY = (e.clientY - rect.top) / rect.height;
-                  const x = (rawX - pan.x) / zoom;
-                  const y = (rawY - pan.y) / zoom;
-                  if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
-                    setMyGuess({ lat: 90 - y * 180, lng: x * 360 - 180 });
-                    playClick();
-                  }
-                }
-              }}
-            >
-              <div
-                className="absolute inset-0"
-                style={{
-                  transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
-                  transformOrigin: '0 0',
-                  backgroundImage: `url(${WORLD_MAP_URL})`,
-                  backgroundSize: '100% 100%',
-                  willChange: 'transform',
-                }}
-              >
-                {myGuess && phase === 'guessing' && (
-                  <MarkerPin lat={myGuess.lat} lng={myGuess.lng} color="#3b82f6" label="te" scale={1 / zoom} />
-                )}
-                {phase === 'reveal' && (
-                  <>
-                    {guesses.map((g) => (
-                      <MarkerPin key={g.playerId} lat={g.lat} lng={g.lng} color="#3b82f6" label={g.username} scale={1 / zoom} />
-                    ))}
-                    {loc && <MarkerPin lat={loc.lat} lng={loc.lng} color="#ef4444" label="🎯" scale={1 / zoom} />}
-                    {loc && (
-                      <svg className="absolute inset-0 pointer-events-none w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        {guesses.map((g) => {
-                          const p1 = latLngToPct(g.lat, g.lng);
-                          const p2 = latLngToPct(loc.lat, loc.lng);
-                          return <line key={g.playerId} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                            stroke="#3b82f6" strokeWidth={0.3 / zoom} strokeDasharray={`${0.8 / zoom} ${0.5 / zoom}`} opacity="0.7" />;
-                        })}
-                      </svg>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
-              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border font-bold text-lg shadow"
-                onClick={() => { const nz = Math.min(8, zoom * 1.4); setPan((p) => ({ x: 0.5 - (0.5 - p.x) * (nz / zoom), y: 0.5 - (0.5 - p.y) * (nz / zoom) })); setZoom(nz); }}>+</button>
-              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border font-bold text-lg shadow"
-                onClick={() => { const nz = Math.max(1, zoom / 1.4); setPan((p) => ({ x: 0.5 - (0.5 - p.x) * (nz / zoom), y: 0.5 - (0.5 - p.y) * (nz / zoom) })); setZoom(nz); }}>−</button>
-              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border text-xs shadow"
-                onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⟲</button>
-            </div>
-          </div>
+      {/* Street View — full screen */}
+      <div ref={panoDivRef} className="absolute inset-0" />
 
-          {phase === 'guessing' && (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="text-xs text-muted-foreground self-center">
-                {myGuess ? `📍 ${myGuess.lat.toFixed(1)}°, ${myGuess.lng.toFixed(1)}°` : 'Még nem tippeltél'}
-              </div>
-              <button className="game-btn-primary text-sm py-2" onClick={submitGuess} disabled={!myGuess || submitted}>
-                {submitted ? '✅ Beküldve' : '✅ Tipp beküldése'}
-              </button>
-            </div>
-          )}
-
-          {phase === 'reveal' && (
-            <div className="mt-2 space-y-1 text-sm">
-              <div className="text-center font-bold">{loc?.name}</div>
-              {[...guesses].sort((a, b) => b.score - a.score).map((g) => (
-                <div key={g.playerId} className="flex justify-between border-b border-border/40 py-1">
-                  <span>{g.username}</span>
-                  <span className="text-xs text-muted-foreground">{g.distance.toFixed(0)} km</span>
-                  <span className="font-bold text-primary">+{g.score}</span>
-                </div>
-              ))}
-              {isHost && (
-                <button className="game-btn-primary w-full mt-2" onClick={hostNext}>
-                  {round >= totalRounds ? '🏁 Befejezés' : '▶️ Következő kör'}
-                </button>
-              )}
-            </div>
-          )}
+      {/* Top HUD */}
+      <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-2 p-2 md:p-3 pointer-events-none">
+        <div className="ios-glass rounded-2xl px-3 py-1.5 text-xs md:text-sm font-bold pointer-events-auto">
+          🌍 Kör {round}/{totalRounds}
+        </div>
+        <div className={`ios-glass rounded-2xl px-4 py-1.5 text-base md:text-lg font-bold pointer-events-auto ${timeLeft <= 10 ? 'text-destructive animate-pulse' : ''}`}>
+          ⏱️ {timeLeft}mp
+        </div>
+        <div className="ios-glass rounded-2xl px-3 py-1.5 text-xs md:text-sm font-bold pointer-events-auto">
+          🎯 {guesses.length}/{players.length}
         </div>
       </div>
 
-      {/* Live leaderboard mini */}
+      {/* Live leaderboard pills */}
       {sortedScores.some((s) => s.score > 0) && (
-        <div className="game-card text-xs flex flex-wrap gap-2 justify-center py-2">
-          {sortedScores.map((s, i) => (
-            <span key={s.playerId} className="px-2 py-1 rounded-full bg-card border border-border">
+        <div className="absolute top-14 left-2 right-2 md:left-3 md:right-auto z-20 flex flex-wrap gap-1 pointer-events-none">
+          {sortedScores.slice(0, 5).map((s, i) => (
+            <span key={s.playerId} className="ios-glass rounded-full px-2 py-0.5 text-[10px] md:text-xs">
               {i === 0 ? '🥇' : ''} {s.username}: <b>{s.score}</b>
             </span>
           ))}
         </div>
       )}
-    </div>
-  );
-}
 
-function latLngToPct(lat: number, lng: number) {
-  return { x: ((lng + 180) / 360) * 100, y: ((90 - lat) / 180) * 100 };
-}
+      {/* Mini-map (bottom-right). Click to expand. */}
+      <div
+        className={`absolute z-20 transition-all duration-300 ease-out ${
+          mapExpanded
+            ? 'inset-2 md:inset-auto md:right-4 md:bottom-4 md:w-[55vw] md:h-[70vh]'
+            : 'right-2 bottom-20 md:right-4 md:bottom-4 w-[60vw] sm:w-[40vw] md:w-[28vw] h-[35vh] md:h-[40vh]'
+        }`}
+      >
+        <div className="relative w-full h-full rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl ios-glass">
+          <div ref={mapDivRef} className="absolute inset-0" />
+          <button
+            onClick={() => setMapExpanded((v) => !v)}
+            className="absolute top-2 left-2 z-10 ios-glass rounded-lg w-8 h-8 flex items-center justify-center text-sm font-bold"
+            title={mapExpanded ? 'Kicsinyítés' : 'Nagyítás'}
+          >
+            {mapExpanded ? '🗗' : '🗖'}
+          </button>
+          {!myGuess && (
+            <div className="absolute bottom-2 left-2 right-2 ios-glass rounded-lg text-center py-1 text-[10px] md:text-xs font-bold pointer-events-none">
+              📍 Kattints a térképre, hogy tippelj!
+            </div>
+          )}
+        </div>
+      </div>
 
-function MarkerPin({ lat, lng, color, label, scale = 1 }: { lat: number; lng: number; color: string; label: string; scale?: number }) {
-  const p = latLngToPct(lat, lng);
-  return (
-    <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-      <div className="flex flex-col items-center" style={{ transform: `scale(${scale})`, transformOrigin: 'bottom center' }}>
-        <div className="text-[10px] font-bold px-1 rounded bg-background/80 border border-border whitespace-nowrap mb-0.5">{label}</div>
-        <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ backgroundColor: color }} />
+      {/* Submit bar (bottom-left) */}
+      <div className="absolute bottom-2 left-2 md:bottom-4 md:left-4 z-20 max-w-[40vw]">
+        <button
+          onClick={submitGuess}
+          disabled={!myGuess || submitted}
+          className={`px-4 py-3 rounded-2xl font-bold shadow-2xl border-2 ios-glass transition-all ${
+            myGuess && !submitted ? 'bg-primary text-primary-foreground border-primary scale-100 hover:scale-105' : 'opacity-60 border-border'
+          }`}
+        >
+          {submitted ? '✅ Beküldve' : myGuess ? '🎯 Tipp beküldése' : '📍 Tippelj a térképen'}
+        </button>
+        {myGuess && !submitted && (
+          <div className="ios-glass rounded-lg px-2 py-1 mt-1 text-[10px] md:text-xs">
+            {myGuess.lat.toFixed(1)}°, {myGuess.lng.toFixed(1)}°
+          </div>
+        )}
       </div>
     </div>
   );

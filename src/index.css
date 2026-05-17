@@ -170,6 +170,29 @@
 .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 .animate-spring-in { animation: spring-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 .animate-blur-in { animation: blur-in 0.5s ease-out both; }
+
+/* ===== New "epic" animations ===== */
+@keyframes pop-in {
+  0% { transform: scale(0.5) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.12) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes float-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.6); }
+  50% { box-shadow: 0 0 0 14px hsl(var(--primary) / 0); }
+}
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+.animate-pop-in { animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.animate-float-bob { animation: float-bob 3.2s ease-in-out infinite; }
+.animate-glow-ring { animation: glow-ring 2.4s ease-out infinite; }
+.animate-sparkle { animation: sparkle 1.6s ease-in-out infinite; }
 .animate-shine {
   background: linear-gradient(110deg, transparent 25%, hsl(48 100% 80% / 0.6) 50%, transparent 75%);
   background-size: 200% 100%;

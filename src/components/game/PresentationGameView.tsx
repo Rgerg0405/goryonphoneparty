@@ -22,9 +22,23 @@ const PRES_TEMPLATES = [
   'A 5 lépéses módszer',
 ];
 
+// Keyword bank used to pull random "real" photos from picsum/Unsplash
+const IMG_KEYWORDS = [
+  'technology','business','nature','space','city','people','food','animal','art','science',
+  'sport','travel','music','ocean','mountain','desert','forest','sunset','car','robot',
+  'astronaut','startup','vintage','retro','neon','minimal','abstract','architecture','sky','sunrise',
+];
+
+function pickKeyword() { return IMG_KEYWORDS[Math.floor(Math.random() * IMG_KEYWORDS.length)]; }
+function imgUrlFor(seed: string) {
+  // Picsum is free, reliable and CORS-safe.
+  // Use the seed so the same slide stays the same image across players.
+  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/1280/720`;
+}
+
 type Phase = 'intro' | 'collect' | 'pres' | 'notes' | 'recap' | 'end';
 
-type Slide = { emoji: string; template: string };
+type Slide = { emoji: string; template: string; keyword: string; img: string };
 
 export default function PresentationGameView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const slidesPerTalk = Math.max(3, Math.min(10, settings.presSlides ?? 5));
@@ -184,10 +198,16 @@ export default function PresentationGameView({ code, players, playerId, username
   }
 
   function startPresentation(idx: number, sourceTitles = titlesRef.current) {
-    const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, () => ({
-      emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
-      template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
-    }));
+    const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, (_, i) => {
+      const kw = pickKeyword();
+      const seed = `${code}-${idx}-${i}-${kw}-${Math.floor(Math.random() * 100000)}`;
+      return {
+        emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
+        template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
+        keyword: kw,
+        img: imgUrlFor(seed),
+      };
+    });
     setPresenterIdx(idx); setSlideIdx(0); setSlides(newSlides); setGauge(0); setPhase('pres');
     setSlideDeadline(Date.now() + slideTime * 1000);
     channelRef.current?.send({ type: 'broadcast', event: 'pres:start', payload: { idx, slides: newSlides, titles: sourceTitles } });
@@ -315,9 +335,32 @@ export default function PresentationGameView({ code, players, playerId, username
           <p className={`text-sm font-bold ${slideTimeLeft <= 5 ? 'text-destructive animate-pulse' : 'text-muted-foreground'}`}>⏱️ {slideTimeLeft}mp</p>
         </div>
         {slide && (
-          <div key={slideIdx} className="rounded-2xl text-center py-10 md:py-16 px-4 space-y-4 animate-blur-in shadow-2xl" style={{ background: bg, color: '#fff', minHeight: '40vh' }}>
-            <div className="text-7xl md:text-9xl animate-spring-in drop-shadow-lg">{slide.emoji}</div>
-            <div className="text-2xl md:text-4xl font-bold drop-shadow-lg" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>{slide.template}</div>
+          <div
+            key={slideIdx}
+            className="relative rounded-2xl overflow-hidden text-center animate-blur-in shadow-2xl"
+            style={{ background: bg, color: '#fff', minHeight: '50vh' }}
+          >
+            {/* Real-photo background */}
+            <img
+              src={slide.img}
+              alt={slide.keyword}
+              className="absolute inset-0 w-full h-full object-cover animate-spring-in"
+              loading="eager"
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (!el.dataset.fallback) {
+                  el.dataset.fallback = '1';
+                  el.src = `https://source.unsplash.com/featured/1280x720/?${encodeURIComponent(slide.keyword)}`;
+                }
+              }}
+            />
+            {/* Gradient overlay so text is legible */}
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.75) 100%)' }} />
+            <div className="relative z-10 flex flex-col items-center justify-end h-full px-4 py-8 md:py-12 space-y-4">
+              <div className="text-6xl md:text-8xl animate-spring-in drop-shadow-lg">{slide.emoji}</div>
+              <div className="text-2xl md:text-4xl font-bold drop-shadow-lg" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.7)' }}>{slide.template}</div>
+              <div className="text-xs md:text-sm uppercase tracking-widest text-white/70">#{slide.keyword}</div>
+            </div>
           </div>
         )}
         <div className="game-card ios-glass flex items-center justify-between py-3 px-4">
