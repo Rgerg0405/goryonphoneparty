@@ -13,6 +13,8 @@ export default function AnimationGameView({ code, players, playerId, username, i
   const totalFrames = settings.animFrames ?? 6;
   const frameTime = settings.animFrameTime ?? 30;
   const channelRef = useRef<any>(null);
+  const submittedRef = useRef<Set<string>>(new Set());
+  const animsRef = useRef<Record<string, string[]>>({});
 
   const [phase, setPhase] = useState<'draw' | 'show' | 'end'>('draw');
   const [frameIdx, setFrameIdx] = useState(0);
@@ -23,26 +25,35 @@ export default function AnimationGameView({ code, players, playerId, username, i
   const [showingIdx, setShowingIdx] = useState(0);
   const [playFrame, setPlayFrame] = useState(0);
 
+  useEffect(() => { animsRef.current = allAnims; }, [allAnims]);
+
+  function tryStartShow() {
+    if (!isHost) return;
+    if (submittedRef.current.size >= players.length) {
+      const anims = { ...animsRef.current };
+      channelRef.current?.send({ type: 'broadcast', event: 'show:start', payload: { anims } });
+      setAllAnims(anims); setPhase('show'); setShowingIdx(0); setPlayFrame(0);
+    }
+  }
+
   useEffect(() => {
     const ch = supabase.channel(`anim-${code}`);
-    ch.on('broadcast', { event: 'frame:next' }, ({ payload }) => {
-      setFrameIdx(payload.idx); setDeadline(payload.deadlineAt); playNotification();
-    });
     ch.on('broadcast', { event: 'anim:submit' }, ({ payload }) => {
+      submittedRef.current.add(payload.playerId);
       setAllAnims((a) => ({ ...a, [payload.playerId]: payload.frames }));
+      tryStartShow();
     });
     ch.on('broadcast', { event: 'show:start' }, ({ payload }) => {
       setAllAnims(payload.anims); setPhase('show'); setShowingIdx(0); setPlayFrame(0);
     });
     ch.on('broadcast', { event: 'show:next' }, ({ payload }) => {
       setShowingIdx(payload.idx); setPlayFrame(0);
-      if (payload.idx >= players.length) setPhase('end');
+      if (payload.idx >= Object.keys(animsRef.current).length) setPhase('end');
     });
     ch.subscribe((s) => {
       if (s === 'SUBSCRIBED' && isHost) {
         const d = Date.now() + frameTime * 1000;
         setDeadline(d);
-        setTimeout(() => ch.send({ type: 'broadcast', event: 'frame:next', payload: { idx: 0, deadlineAt: d } }), 500);
       }
     });
     channelRef.current = ch;
@@ -50,6 +61,7 @@ export default function AnimationGameView({ code, players, playerId, username, i
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
+  // local frame timer (auto-advance own drawing)
   useEffect(() => {
     if (phase !== 'draw') return;
     const t = setInterval(() => {
@@ -59,7 +71,7 @@ export default function AnimationGameView({ code, players, playerId, username, i
     return () => clearInterval(t);
   }, [phase, deadline]);
 
-  // playback ticker for show phase
+  // playback ticker
   useEffect(() => {
     if (phase !== 'show') return;
     const t = setInterval(() => setPlayFrame((f) => f + 1), 250);
@@ -71,24 +83,32 @@ export default function AnimationGameView({ code, players, playerId, username, i
     setMyFrames(newFrames);
     playClick();
     if (newFrames.length >= totalFrames) {
+      // submit full animation
+      submittedRef.current.add(playerId);
+      const updated = { ...animsRef.current, [playerId]: newFrames };
+      animsRef.current = updated;
+      setAllAnims(updated);
       channelRef.current?.send({ type: 'broadcast', event: 'anim:submit', payload: { playerId, frames: newFrames } });
-      if (isHost) {
-        // wait then trigger show
-        setTimeout(() => {
-          channelRef.current?.send({ type: 'broadcast', event: 'show:start', payload: { anims: { ...allAnims, [playerId]: newFrames } } });
-        }, 1500);
-      }
-    } else if (isHost) {
-      const d = Date.now() + frameTime * 1000;
-      setDeadline(d);
-      channelRef.current?.send({ type: 'broadcast', event: 'frame:next', payload: { idx: newFrames.length, deadlineAt: d } });
+      if (isHost) tryStartShow();
+    } else {
+      // advance my own frame
+      setFrameIdx(newFrames.length);
+      setDeadline(Date.now() + frameTime * 1000);
     }
+  }
+
+  function advanceShow() {
+    if (!isHost) return;
+    const next = showingIdx + 1;
+    channelRef.current?.send({ type: 'broadcast', event: 'show:next', payload: { idx: next } });
+    setShowingIdx(next); setPlayFrame(0);
+    if (next >= Object.keys(animsRef.current).length) setPhase('end');
   }
 
   if (phase === 'end') {
     return (
       <div className="max-w-2xl mx-auto p-4 space-y-3">
-        <h2 className="text-3xl font-bold text-center">🎬 Vége!</h2>
+        <h2 className="text-3xl font-bold text-center">🎬 Animáció vége!</h2>
         {isHost && <button className="game-btn-primary w-full" onClick={onFinish}>Vissza a lobbyba</button>}
       </div>
     );
@@ -103,11 +123,9 @@ export default function AnimationGameView({ code, players, playerId, username, i
     return (
       <div className="max-w-3xl mx-auto p-4 space-y-3">
         <div className="game-card text-center font-bold">🎬 {showingPlayer?.username || '...'} animációja ({showingIdx + 1}/{playerIds.length})</div>
-        <div className="game-card p-2"><img src={cur} alt="" className="w-full rounded-lg" /></div>
+        {cur && <div className="game-card p-2"><img src={cur} alt="" className="w-full rounded-lg" /></div>}
         {isHost && (
-          <button className="game-btn-primary w-full" onClick={() => channelRef.current?.send({ type: 'broadcast', event: 'show:next', payload: { idx: showingIdx + 1 } })}>
-            Következő ▶️
-          </button>
+          <button className="game-btn-primary w-full" onClick={advanceShow}>Következő ▶️</button>
         )}
       </div>
     );
@@ -116,18 +134,38 @@ export default function AnimationGameView({ code, players, playerId, username, i
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-3">
       <div className="game-card flex items-center justify-between py-2 px-4">
-        <div className="font-bold">🎬 Képkocka {frameIdx + 1}/{totalFrames}</div>
+        <div className="font-bold">🎬 Képkocka {Math.min(frameIdx + 1, totalFrames)}/{totalFrames}</div>
         <div className="font-bold">{myFrames.length}/{totalFrames} kész</div>
         <div className={`font-bold text-xl ${timeLeft <= 5 ? 'text-destructive animate-pulse' : ''}`}>⏱️ {timeLeft}mp</div>
       </div>
-      {myFrames.length > frameIdx ? (
-        <div className="game-card text-center py-8 text-muted-foreground">Várakozás a többi játékosra...</div>
+      {myFrames.length >= totalFrames ? (
+        <div className="game-card text-center py-8 text-muted-foreground">
+          ✅ Készen vagy! Várakozás a többi játékosra... ({submittedRef.current.size}/{players.length})
+          {isHost && (
+            <div className="mt-3">
+              <button className="game-btn bg-card text-xs py-1 px-3" onClick={() => {
+                // host force-skip remaining players
+                const anims = { ...animsRef.current };
+                channelRef.current?.send({ type: 'broadcast', event: 'show:start', payload: { anims } });
+                setAllAnims(anims); setPhase('show'); setShowingIdx(0); setPlayFrame(0);
+              }}>⏭️ Indítás most</button>
+            </div>
+          )}
+        </div>
       ) : (
-        <DrawingCanvas onSubmit={submitFrame} />
+        <>
+          {myFrames.length > 0 && (
+            <div className="game-card p-2 text-center">
+              <p className="text-xs text-muted-foreground mb-1">Előző képkocka (átlátszó referencia)</p>
+              <img src={myFrames[myFrames.length - 1]} alt="" className="max-h-32 mx-auto opacity-50" />
+            </div>
+          )}
+          <DrawingCanvas onSubmit={submitFrame} />
+        </>
       )}
-      {myFrames.length > 0 && (
+      {myFrames.length > 0 && myFrames.length < totalFrames && (
         <div className="game-card">
-          <div className="text-xs font-bold mb-1">Előző képkockák</div>
+          <div className="text-xs font-bold mb-1">Eddigi képkockák</div>
           <div className="flex gap-2 overflow-x-auto">
             {myFrames.map((f, i) => <img key={i} src={f} alt="" className="h-16 rounded border border-border" />)}
           </div>

@@ -3,26 +3,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { Player, GameSettings } from '@/lib/gameTypes';
 import { pickScribbleWord } from '@/lib/scribbleWords';
 import DrawingCanvas from './DrawingCanvas';
-import { getAvatarDisplay } from '@/lib/avatars';
 import { playClick, playPop, playNotification } from '@/lib/sounds';
 
 interface Props {
-  code: string;
-  players: Player[];
-  playerId: string;
-  username: string;
-  isHost: boolean;
-  settings: GameSettings;
-  onFinish: () => void;
+  code: string; players: Player[]; playerId: string; username: string;
+  isHost: boolean; settings: GameSettings; onFinish: () => void;
 }
 
-type Msg = { id: string; pid: string; name: string; text: string; correct: boolean; t: number };
-type Round = { drawerId: string; word: string; startAt: number; deadlineAt: number };
+type Msg = { id: string; pid: string; name: string; text: string; correct: boolean; t: number; points?: number };
+type Round = { drawerId: string; word: string; startAt: number; deadlineAt: number; idx: number };
+
+function maskWord(w: string) {
+  return w.split('').map((c) => (c === ' ' ? ' ' : '_')).join('');
+}
 
 export default function ScribbleGameView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const rounds = settings.scribbleRounds ?? 3;
   const drawTime = settings.scribbleDrawTime ?? 60;
   const channelRef = useRef<any>(null);
+  const endedRef = useRef(false);
+  const scoresRef = useRef<Record<string, number>>({});
+  const roundIdxRef = useRef(0);
+  const solvedRef = useRef<Set<string>>(new Set());
 
   const [roundIdx, setRoundIdx] = useState(0);
   const [round, setRound] = useState<Round | null>(null);
@@ -33,16 +35,63 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const [phase, setPhase] = useState<'wait' | 'play' | 'reveal' | 'end'>('wait');
   const [guess, setGuess] = useState('');
   const [liveDrawing, setLiveDrawing] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<string>('');
 
-  // build rotation: every round, drawer = players[(round) % players.length]
+  useEffect(() => { scoresRef.current = scores; }, [scores]);
+  useEffect(() => { roundIdxRef.current = roundIdx; }, [roundIdx]);
+  useEffect(() => { solvedRef.current = solved; }, [solved]);
+
   const totalRounds = rounds * players.length;
-  const currentDrawerId = useMemo(() => round?.drawerId ?? players[roundIdx % players.length]?.player_id, [round, roundIdx, players]);
+  const currentDrawerId = useMemo(
+    () => round?.drawerId ?? players[roundIdx % players.length]?.player_id,
+    [round, roundIdx, players],
+  );
   const isDrawer = currentDrawerId === playerId;
+
+  function startRound(idx: number) {
+    endedRef.current = false;
+    const drawer = players[idx % players.length];
+    const r: Round = {
+      drawerId: drawer.player_id,
+      word: pickScribbleWord(settings.scribbleCustomWords),
+      startAt: Date.now(),
+      deadlineAt: Date.now() + drawTime * 1000,
+      idx,
+    };
+    setRoundIdx(idx);
+    setRound(r);
+    setRevealed(maskWord(r.word));
+    setLiveDrawing(null);
+    setSolved(new Set());
+    setMessages([]);
+    setPhase('play');
+    channelRef.current?.send({ type: 'broadcast', event: 'round:start', payload: r });
+  }
+
+  function scheduleNext(nextIdx: number) {
+    setTimeout(() => {
+      if (nextIdx >= totalRounds) setPhase('end');
+      else if (isHost) startRound(nextIdx);
+    }, 3500);
+  }
+
+  function endRound() {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    const nextIdx = roundIdxRef.current + 1;
+    const sc = scoresRef.current;
+    channelRef.current?.send({ type: 'broadcast', event: 'round:end', payload: { scores: sc, nextIdx } });
+    setPhase('reveal');
+    scheduleNext(nextIdx);
+  }
 
   useEffect(() => {
     const ch = supabase.channel(`scribble-${code}`);
     ch.on('broadcast', { event: 'round:start' }, ({ payload }) => {
+      endedRef.current = false;
       setRound(payload);
+      setRoundIdx(payload.idx);
+      setRevealed(maskWord(payload.word));
       setSolved(new Set());
       setMessages([]);
       setLiveDrawing(null);
@@ -50,31 +99,36 @@ export default function ScribbleGameView({ code, players, playerId, username, is
       playNotification();
     });
     ch.on('broadcast', { event: 'guess' }, ({ payload }) => {
-      setMessages((m) => [...m, payload].slice(-50));
+      setMessages((m) => [...m, payload].slice(-80));
       if (payload.correct) {
         setSolved((s) => new Set([...Array.from(s), payload.pid]));
-        setScores((sc) => ({ ...sc, [payload.pid]: (sc[payload.pid] || 0) + payload.points }));
+        setScores((sc) => ({ ...sc, [payload.pid]: (sc[payload.pid] || 0) + (payload.points || 0) }));
         playPop();
+        // host: end early if everyone (except drawer) solved
+        if (isHost) {
+          setTimeout(() => {
+            const drawer = roundIdxRef.current;
+            const r = round;
+            const drawerId = players[drawer % players.length]?.player_id;
+            const guessers = players.filter((p) => p.player_id !== drawerId).length;
+            if (solvedRef.current.size >= guessers) endRound();
+          }, 500);
+        }
       }
     });
     ch.on('broadcast', { event: 'live:draw' }, ({ payload }) => {
       if (payload.drawerId !== playerId) setLiveDrawing(payload.dataUrl);
     });
+    ch.on('broadcast', { event: 'reveal' }, ({ payload }) => {
+      setRevealed(payload.mask);
+    });
     ch.on('broadcast', { event: 'round:end' }, ({ payload }) => {
       setPhase('reveal');
-      setScores(payload.scores);
-      // reveal then next
-      setTimeout(() => {
-        if (payload.nextIdx >= totalRounds) {
-          setPhase('end');
-        } else if (isHost) {
-          startRound(payload.nextIdx);
-        }
-      }, 3500);
+      setScores(payload.scores || {});
+      scheduleNext(payload.nextIdx);
     });
-    ch.subscribe(async (status) => {
+    ch.subscribe((status) => {
       if (status === 'SUBSCRIBED' && isHost) {
-        // small delay so subscribers attach
         setTimeout(() => startRound(0), 700);
       }
     });
@@ -83,7 +137,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
-  // timer
+  // play-phase timer
   useEffect(() => {
     if (phase !== 'play' || !round) return;
     const t = setInterval(() => {
@@ -98,26 +152,29 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, round]);
 
-  function startRound(idx: number) {
-    const drawer = players[idx % players.length];
-    const r: Round = {
-      drawerId: drawer.player_id,
-      word: pickScribbleWord(settings.scribbleCustomWords),
-      startAt: Date.now(),
-      deadlineAt: Date.now() + drawTime * 1000,
-    };
-    setRoundIdx(idx);
-    channelRef.current?.send({ type: 'broadcast', event: 'round:start', payload: { ...r, idx } });
-    setRound(r);
-    setPhase('play');
-  }
+  // host: progressive letter reveal
+  useEffect(() => {
+    if (!isHost || phase !== 'play' || !round) return;
+    const word = round.word;
+    const letterIdx = word.split('').map((_, i) => i).filter((i) => word[i] !== ' ');
+    const total = drawTime;
+    const timers: any[] = [];
+    [
+      { atSecondsIn: Math.round(total * 0.5), pct: 0.25 },
+      { atSecondsIn: Math.round(total * 0.75), pct: 0.5 },
+    ].forEach(({ atSecondsIn, pct }) => {
+      timers.push(setTimeout(() => {
+        if (endedRef.current) return;
+        const take = Math.max(1, Math.floor(letterIdx.length * pct));
+        const shuffled = letterIdx.slice().sort(() => Math.random() - 0.5).slice(0, take);
+        const mask = word.split('').map((c, i) => (shuffled.includes(i) || c === ' ' ? c : '_')).join('');
+        setRevealed(mask);
+        channelRef.current?.send({ type: 'broadcast', event: 'reveal', payload: { mask } });
+      }, atSecondsIn * 1000));
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [phase, round, drawTime, isHost]);
 
-  function endRound() {
-    channelRef.current?.send({ type: 'broadcast', event: 'round:end', payload: { scores, nextIdx: roundIdx + 1 } });
-    setPhase('reveal');
-  }
-
-  // drawer broadcasts canvas every 700ms
   const handleLiveDraw = (dataUrl: string) => {
     if (!isDrawer) return;
     channelRef.current?.send({ type: 'broadcast', event: 'live:draw', payload: { drawerId: playerId, dataUrl } });
@@ -125,13 +182,28 @@ export default function ScribbleGameView({ code, players, playerId, username, is
 
   function submitGuess() {
     if (!guess.trim() || !round || isDrawer || solved.has(playerId)) return;
-    const ok = guess.trim().toLowerCase() === round.word.toLowerCase();
+    const text = guess.trim();
+    const ok = text.toLowerCase() === round.word.toLowerCase();
     const points = ok ? Math.max(20, Math.round(timeLeft * 2)) : 0;
-    const payload: Msg & { points: number } = {
-      id: crypto.randomUUID(), pid: playerId, name: username, text: ok ? '✅ kitalálta!' : guess.trim(),
+    const payload: Msg = {
+      id: crypto.randomUUID(), pid: playerId, name: username,
+      text: ok ? '✅ kitalálta!' : text,
       correct: ok, t: Date.now(), points,
-    } as any;
+    };
     channelRef.current?.send({ type: 'broadcast', event: 'guess', payload });
+    setMessages((m) => [...m, payload].slice(-80));
+    if (ok) {
+      setSolved((s) => new Set([...Array.from(s), playerId]));
+      setScores((sc) => ({ ...sc, [playerId]: (sc[playerId] || 0) + points }));
+      playPop();
+      if (isHost) {
+        setTimeout(() => {
+          const drawerId = players[roundIdxRef.current % players.length]?.player_id;
+          const guessers = players.filter((p) => p.player_id !== drawerId).length;
+          if (solvedRef.current.size >= guessers) endRound();
+        }, 500);
+      }
+    }
     setGuess('');
     playClick();
   }
@@ -163,24 +235,18 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const drawer = players.find((p) => p.player_id === currentDrawerId);
 
   return (
-    <div className="max-w-5xl mx-auto p-4 grid lg:grid-cols-[1fr_300px] gap-3">
-      <div className="space-y-3">
-        <div className="game-card py-2 px-4 flex items-center justify-between">
-          <div className="font-bold">Kör {roundIdx + 1}/{totalRounds}</div>
-          <div className="font-bold">
-            {drawer && (
-              <span className="flex items-center gap-2">
-                ✏️ {drawer.username} rajzol
-              </span>
-            )}
-          </div>
+    <div className="max-w-[1500px] mx-auto p-2 grid lg:grid-cols-[minmax(0,1fr)_320px] gap-3">
+      <div className="space-y-2">
+        <div className="game-card py-2 px-4 flex items-center justify-between gap-3">
+          <div className="font-bold text-sm">Kör {roundIdx + 1}/{totalRounds}</div>
+          <div className="font-bold text-sm">✏️ {drawer?.username || '...'}</div>
           <div className={`font-bold text-xl ${timeLeft <= 10 ? 'text-destructive animate-pulse' : ''}`}>⏱️ {timeLeft}mp</div>
         </div>
 
         {isDrawer && phase === 'play' && round && (
           <>
             <div className="game-card text-center py-2">
-              <p className="text-sm text-muted-foreground">A te szavad:</p>
+              <p className="text-xs text-muted-foreground">A te szavad:</p>
               <p className="text-3xl font-bold">{round.word}</p>
             </div>
             <DrawingCanvas onSubmit={() => {}} hideSubmit onChange={handleLiveDraw} />
@@ -188,15 +254,21 @@ export default function ScribbleGameView({ code, players, playerId, username, is
         )}
 
         {!isDrawer && phase === 'play' && (
-          <div className="game-card p-2">
-            <div className="rounded-xl overflow-hidden bg-white" style={{ aspectRatio: '16/10' }}>
-              {liveDrawing ? (
-                <img src={liveDrawing} alt="" className="w-full h-full object-contain" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground">A rajzoló kezd...</div>
-              )}
+          <>
+            <div className="game-card text-center py-3">
+              <p className="text-xs text-muted-foreground">A szó:</p>
+              <p className="text-3xl font-mono font-bold tracking-[0.4em]">{revealed || '_ _ _'}</p>
             </div>
-          </div>
+            <div className="game-card p-2">
+              <div className="rounded-xl overflow-hidden bg-white" style={{ aspectRatio: '16/10' }}>
+                {liveDrawing ? (
+                  <img src={liveDrawing} alt="" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">A rajzoló kezd...</div>
+                )}
+              </div>
+            </div>
+          </>
         )}
 
         {phase === 'reveal' && round && (
@@ -208,7 +280,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
         )}
       </div>
 
-      <div className="game-card flex flex-col h-[70vh]">
+      <div className="game-card flex flex-col h-[75vh]">
         <div className="font-bold text-sm mb-2">💬 Tippek</div>
         <div className="flex-1 overflow-y-auto space-y-1 text-sm">
           {messages.map((m) => (
@@ -222,12 +294,12 @@ export default function ScribbleGameView({ code, players, playerId, username, is
             <input value={guess} onChange={(e) => setGuess(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submitGuess()}
               className="game-input flex-1" placeholder="Tipp..." autoFocus />
-            <button className="game-btn-primary" onClick={submitGuess}>OK</button>
+            <button className="game-btn-primary px-3" onClick={submitGuess}>OK</button>
           </div>
         )}
         <div className="mt-3 border-t-2 border-border pt-2">
           <div className="text-xs font-bold mb-1">🏆 Eredmény</div>
-          {sortedScores.slice(0, 5).map(([pid, sc]) => {
+          {sortedScores.slice(0, 8).map(([pid, sc]) => {
             const p = players.find((x) => x.player_id === pid);
             return (
               <div key={pid} className="flex justify-between text-xs">
