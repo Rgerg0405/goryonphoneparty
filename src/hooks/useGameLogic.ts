@@ -438,6 +438,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
       channel.on('broadcast', { event: 'player:submit' }, ({ payload }) => {
         if (!gameRef.current.isHost) return;
+        if (payload.sessionNumber !== gameRef.current.sessionNumber || payload.step !== gameRef.current.step) return;
         submissionsRef.current.add(payload.playerId);
         const count = submissionsRef.current.size;
         updateGame({ submittedCount: count });
@@ -662,7 +663,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     channelRef.current?.send({
       type: 'broadcast',
       event: 'player:submit',
-      payload: { playerId },
+      payload: { playerId, step: g.step, sessionNumber: g.sessionNumber },
     });
 
     if (g.isHost) {
