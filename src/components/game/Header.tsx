@@ -10,12 +10,12 @@ export default function Header({ musicActive = true }: HeaderProps) {
   return (
     <header className="relative w-full overflow-hidden">
       {/* Flash Commando Switch */}
-      <div className="absolute top-3 left-4 z-20">
+      <div className="absolute top-2 left-2 md:top-3 md:left-4 z-20 scale-90 md:scale-100 origin-top-left">
         <FlashCommandoSwitch />
       </div>
 
       {/* Music toggle */}
-      <div className="absolute top-3 right-32 z-20">
+      <div className="absolute top-2 right-2 md:top-3 md:right-32 z-20 scale-90 md:scale-100 origin-top-right">
         <YouTubeMusicPlayer videoId="9a6gQtlCzyY" label="Lobby zene" active={musicActive} />
       </div>
 
@@ -24,7 +24,7 @@ export default function Header({ musicActive = true }: HeaderProps) {
         href="https://www.youtube.com/@GoryON"
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute top-3 right-4 z-20 flex items-center gap-1 game-btn-secondary text-sm py-1 px-3"
+        className="hidden md:flex absolute top-3 right-4 z-20 items-center gap-1 game-btn-secondary text-sm py-1 px-3"
         onClick={() => {}}
       >
         <svg viewBox="0 0 24 24" className="w-6 h-6 fill-destructive" xmlns="http://www.w3.org/2000/svg">
@@ -34,7 +34,7 @@ export default function Header({ musicActive = true }: HeaderProps) {
       </a>
 
       {/* Logo */}
-      <div className="flex justify-center pt-3 pb-1">
+      <div className="flex justify-center pt-14 md:pt-3 pb-1">
         <div className="flex items-center gap-3">
           <img src={goryonLogo} alt="GoryON" className="w-16 h-16 rounded-xl border-2 border-border shadow-lg" />
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
