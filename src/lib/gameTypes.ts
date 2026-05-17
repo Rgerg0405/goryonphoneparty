@@ -28,6 +28,9 @@ export interface GameSettings {
   // Presentation
   presSlides?: number;
   presSlideTime?: number;
+  // 3D Shooter
+  shooterTime?: number;
+  shooterTargets?: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -47,6 +50,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   animFrameTime: 30,
   presSlides: 5,
   presSlideTime: 25,
+  shooterTime: 90,
+  shooterTargets: 28,
 };
 
 export interface GameEntry {
@@ -80,6 +85,7 @@ export const GAME_MODES = [
   { id: 'blind-flight', name: 'VAKREPÜLÉS', description: 'Sötétben rajzolsz, csillagok', icon: '🌑' },
   { id: 'animation', name: 'ANIMÁCIÓ', description: 'Képkockás GIF, exportálható', icon: '🎬' },
   { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Vicces prezi, közönség reakció', icon: '🎤' },
+  { id: 'shooter-3d', name: '3D SHOOTER', description: 'Célbalövős 3D minijáték zenével', icon: '🎯' },
 ];
 
 export const TIME_OPTIONS = [

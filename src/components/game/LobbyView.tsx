@@ -63,7 +63,7 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
       {/* Center - Game modes */}
       <div className="game-card flex-1">
         <h2 className="text-xl font-bold mb-3 text-center">🎲 JÁTÉKMÓDOK</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
           {GAME_MODES.map((mode: any) => (
             <button
               key={mode.id}
@@ -190,18 +190,18 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
       </div>
 
       {/* Bottom action bar - absolutely positioned or at the bottom */}
-      <div className="fixed bottom-0 left-0 right-0 flex justify-center gap-4 p-4 bg-background/80 backdrop-blur border-t-2 border-border z-30">
-        <span className="game-btn bg-card font-mono text-xl tracking-widest">
+        <div className="fixed bottom-0 left-0 right-0 flex flex-wrap justify-center gap-2 md:gap-4 p-2 md:p-4 bg-background/80 backdrop-blur border-t-2 border-border z-30">
+        <span className="game-btn bg-card font-mono text-base md:text-xl tracking-widest py-2 md:py-3 px-3 md:px-6">
           🔑 {partyCode}
         </span>
 
-        <button className="game-btn-secondary flex items-center gap-2" onClick={copyInviteLink}>
+        <button className="game-btn-secondary flex items-center gap-2 text-sm md:text-lg py-2 md:py-3 px-3 md:px-6" onClick={copyInviteLink}>
           🔗 MEGHÍVÁS
         </button>
 
         {isHost && (
           <button
-            className="game-btn-primary flex items-center gap-2 animate-pulse-glow disabled:opacity-50 disabled:cursor-not-allowed"
+            className="game-btn-primary flex items-center gap-2 animate-pulse-glow disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-lg py-2 md:py-3 px-3 md:px-6"
             onClick={onStartGame}
             disabled={players.length < 2}
           >
@@ -262,6 +262,15 @@ function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
         <div className="font-bold text-xs">🎤 Prezentáció beállítások</div>
         <NumberRow label="Slide-ok" value={settings.presSlides ?? 5} min={3} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ presSlides: v })} />
         <NumberRow label="Slide idő (mp)" value={settings.presSlideTime ?? 25} min={10} max={60} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ presSlideTime: v })} />
+      </div>
+    );
+  }
+  if (mode === 'shooter-3d') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🎯 3D Shooter beállítások</div>
+        <NumberRow label="Játékidő (mp)" value={settings.shooterTime ?? 90} min={30} max={180} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ shooterTime: v })} />
+        <NumberRow label="Célpontok" value={settings.shooterTargets ?? 28} min={10} max={80} disabled={!isHost} onChange={(v) => onUpdateSettings({ shooterTargets: v })} />
       </div>
     );
   }
