@@ -40,7 +40,9 @@ export default function AnimationGameView({ code, players, playerId, username, i
     const ch = supabase.channel(`anim-${code}`);
     ch.on('broadcast', { event: 'anim:submit' }, ({ payload }) => {
       submittedRef.current.add(payload.playerId);
-      setAllAnims((a) => ({ ...a, [payload.playerId]: payload.frames }));
+      const updated = { ...animsRef.current, [payload.playerId]: payload.frames };
+      animsRef.current = updated;
+      setAllAnims(updated);
       tryStartShow();
     });
     ch.on('broadcast', { event: 'show:start' }, ({ payload }) => {
@@ -132,8 +134,8 @@ export default function AnimationGameView({ code, players, playerId, username, i
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-3">
-      <div className="game-card flex items-center justify-between py-2 px-4">
+    <div className="max-w-6xl mx-auto p-2 md:p-4 space-y-3">
+      <div className="game-card grid grid-cols-3 gap-2 items-center py-2 px-3 md:px-4 text-center">
         <div className="font-bold">🎬 Képkocka {Math.min(frameIdx + 1, totalFrames)}/{totalFrames}</div>
         <div className="font-bold">{myFrames.length}/{totalFrames} kész</div>
         <div className={`font-bold text-xl ${timeLeft <= 5 ? 'text-destructive animate-pulse' : ''}`}>⏱️ {timeLeft}mp</div>
@@ -160,7 +162,7 @@ export default function AnimationGameView({ code, players, playerId, username, i
               <img src={myFrames[myFrames.length - 1]} alt="" className="max-h-32 mx-auto opacity-50" />
             </div>
           )}
-          <DrawingCanvas onSubmit={submitFrame} />
+          <DrawingCanvas onSubmit={submitFrame} compact />
         </>
       )}
       {myFrames.length > 0 && myFrames.length < totalFrames && (
