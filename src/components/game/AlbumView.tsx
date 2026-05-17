@@ -3,6 +3,7 @@ import { GameEntry, Player } from '@/lib/gameTypes';
 import { getAvatarDisplay } from '@/lib/avatars';
 import { playClick } from '@/lib/sounds';
 import vitaCoco from '@/assets/reactions/vitacoco.jpg';
+import { getSlideEntry } from '@/lib/gameFlow';
 
 const REACTIONS = ['😂', '🔥', '❤️', '👏', '😱', '💀', '🤮', '🎨'];
 
@@ -27,9 +28,7 @@ export default function AlbumView({
 }: Props) {
   const [comment, setComment] = useState('');
 
-  const currentEntry = entries.find(
-    (e) => e.chain_index === slide.chain && e.step === slide.step
-  );
+  const currentEntry = getSlideEntry(entries, slide.chain, slide.step);
 
   const chainStarter = playerOrder[slide.chain];
   const chainStarterPlayer = players.find((p) => p.player_id === chainStarter);
