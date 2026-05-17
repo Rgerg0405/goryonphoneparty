@@ -276,6 +276,7 @@ function PaintModal({ shape, onClose, onSave }: {
   const [color, setColor] = useState(shape.color || '#ff4d6d');
   const [size, setSize] = useState(24);
   const [eraser, setEraser] = useState(false);
+  const [mode, setMode] = useState<'paint' | 'rotate'>('paint');
 
   const save = () => {
     if (!canvasRef.current) return;
@@ -309,13 +310,17 @@ function PaintModal({ shape, onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 md:p-4">
-      <div className="game-card w-full max-w-5xl space-y-3">
+      <div className="game-card ios-glass w-full max-w-5xl space-y-3 animate-zoom-in">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-lg">🎨 3D Textúra festő — {shape.kind}</h3>
           <button className="game-btn bg-card text-sm py-1 px-3" onClick={onClose}>✕</button>
         </div>
         <div className="grid md:grid-cols-[260px_1fr] gap-3">
           <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-1">
+              <button type="button" className={`game-btn text-xs py-2 ${mode === 'paint' ? 'bg-primary text-primary-foreground' : 'bg-card'}`} onClick={() => setMode('paint')}>🖌️ Festés</button>
+              <button type="button" className={`game-btn text-xs py-2 ${mode === 'rotate' ? 'bg-primary text-primary-foreground' : 'bg-card'}`} onClick={() => setMode('rotate')}>🔄 Forgatás</button>
+            </div>
             <div>
               <div className="text-xs font-bold mb-1">Szín</div>
               <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-full h-10 rounded border border-border" />
@@ -335,14 +340,14 @@ function PaintModal({ shape, onClose, onSave }: {
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) importTexture(f); e.target.value = ''; }} />
             </label>
             <button type="button" className="game-btn-primary text-sm py-2 w-full" onClick={save}>✅ Alkalmaz</button>
-            <p className="text-[10px] text-muted-foreground">Bal egér: rajzol. Jobb egér / kerék: forgat / zoom.</p>
+            <p className="text-[10px] text-muted-foreground">Festés módban a bal egérrel rajzolsz. Forgatás módban a kamera mozog.</p>
           </div>
-          <div className="rounded-xl overflow-hidden bg-[#1b1b2a] h-[60vh]">
+          <div className="rounded-2xl overflow-hidden bg-[#1b1b2a] h-[60vh] shadow-inner">
             <Canvas camera={{ position: [3, 2, 3], fov: 45 }} dpr={[1, 2]}>
               <ambientLight intensity={0.7} />
               <directionalLight position={[5, 5, 5]} intensity={0.9} />
-              <PaintableMesh shape={shape} canvasRef={canvasRef} color={color} size={size} eraser={eraser} />
-              <OrbitControls makeDefault mouseButtons={{ LEFT: undefined as any, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }} />
+              <PaintableMesh shape={shape} canvasRef={canvasRef} color={color} size={size} eraser={eraser} enabled={mode === 'paint'} />
+              <OrbitControls makeDefault enableRotate={mode === 'rotate'} enablePan={mode === 'rotate'} enableZoom mouseButtons={{ LEFT: mode === 'rotate' ? THREE.MOUSE.ROTATE : (undefined as any), MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }} />
             </Canvas>
           </div>
         </div>
