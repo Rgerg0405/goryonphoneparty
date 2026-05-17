@@ -161,6 +161,7 @@ function PartyContent({ code, playerId, username, avatar }: {
               isHost={game.isHost}
               isSecret={isSecret}
               gameMode={game.settings.gameMode}
+              allowImageImport={game.settings.allowImageImport}
               onSubmit={game.submitEntry}
             />
           )}

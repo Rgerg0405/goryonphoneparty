@@ -64,18 +64,22 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
       <div className="game-card flex-1">
         <h2 className="text-xl font-bold mb-3 text-center">🎲 JÁTÉKMÓDOK</h2>
         <div className="grid grid-cols-3 gap-3">
-          {GAME_MODES.map((mode) => (
+          {GAME_MODES.map((mode: any) => (
             <button
               key={mode.id}
-              className={`mode-card ${settings.gameMode === mode.id ? 'active' : ''}`}
+              className={`mode-card relative ${settings.gameMode === mode.id ? 'active' : ''} ${mode.soon ? 'opacity-60' : 'hover-glow'}`}
               onClick={() => {
-                if (isHost) onUpdateSettings({ gameMode: mode.id });
+                if (isHost && !mode.soon) onUpdateSettings({ gameMode: mode.id });
                 playClick();
               }}
-              disabled={!isHost}
+              disabled={!isHost || mode.soon}
+              title={mode.description}
             >
               <span className="text-3xl">{mode.icon}</span>
               <span className="font-bold text-sm">{mode.name}</span>
+              {mode.soon && (
+                <span className="absolute -top-1 -right-1 text-[10px] bg-accent text-accent-foreground rounded-full px-2 py-0.5 font-bold border border-border">SOON</span>
+              )}
             </button>
           ))}
         </div>
@@ -164,6 +168,21 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-sm mb-2 block">🖼️ Kép import a rajzba</label>
+            <button
+              type="button"
+              disabled={!isHost}
+              onClick={() => { if (isHost) onUpdateSettings({ allowImageImport: !settings.allowImageImport }); playClick(); }}
+              className={`w-full text-xs py-2 px-3 rounded-lg border-2 font-bold transition-all ${
+                settings.allowImageImport ? 'border-primary bg-primary/20' : 'border-border/30 bg-card'
+              }`}
+            >
+              {settings.allowImageImport ? '✅ Engedélyezve' : '❌ Tiltva'}
+            </button>
+            <p className="text-[10px] text-muted-foreground mt-1">Ha be van kapcsolva, a rajzolók egy képet is feltölthetnek új rétegként.</p>
           </div>
         </div>
       </div>
