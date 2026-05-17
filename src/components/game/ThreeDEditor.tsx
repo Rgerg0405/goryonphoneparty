@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Canvas, useThree, useFrame, ThreeEvent } from '@react-three/fiber';
+import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Grid, TransformControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
