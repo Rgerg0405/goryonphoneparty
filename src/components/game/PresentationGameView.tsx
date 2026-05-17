@@ -20,20 +20,70 @@ const PRES_TEMPLATES = [
   'A titkos összetevő',
   'Konkurencia elemzés',
   'A 5 lépéses módszer',
+  'Mit mondanak a szakértők?',
+  'A nagy fordulópont',
+  'Egy kínos kudarc — és tanulság',
+  'A legdrágább hiba, amit elkövethetsz',
+  'Egy egyszerű trükk, ami mindent megváltoztat',
+  'Mire vágynak igazán az emberek?',
+  'Az ipar legjobban őrzött titka',
+  'Egy nap az életemben',
+  'Mi van, ha mindenki téved?',
+  'A 80/20 szabály alkalmazása',
+  'Egy meglepő összefüggés',
+  'A legfontosabb kérdés, amit fel kell tenni',
+  'Mit tanultam az elmúlt évben?',
+  'Egy bátor jóslat',
+  'A mítoszok lerombolása',
+  'Egy szokatlan analógia',
+  'Az első 100 nap',
+  'Élő demó (képzeletben)',
+  'A célközönség titkos vágyai',
+  'Egy konkrét példa',
+  'A tudomány állása ma',
+  'A nagy ellenfelek bemutatása',
+  'Mit ne csinálj soha',
+  'A költségvetés bontása',
+  'Egy vitatott álláspont',
+  'A következő lépés, amit MA megtehetsz',
 ];
 
-// Keyword bank used to pull random "real" photos from picsum/Unsplash
-const IMG_KEYWORDS = [
-  'technology','business','nature','space','city','people','food','animal','art','science',
-  'sport','travel','music','ocean','mountain','desert','forest','sunset','car','robot',
-  'astronaut','startup','vintage','retro','neon','minimal','abstract','architecture','sky','sunrise',
+// Keyword bank — heavy on people so most slides include humans
+const PEOPLE_KEYWORDS = [
+  'portrait','person','people','crowd','team','friends','family','speaker','student','child',
+  'businessman','businesswoman','smile','laugh','group','workers','workplace','meeting','presentation',
+  'audience','dance','musician','chef','athlete','runner','traveler','reader','engineer','scientist',
 ];
+const TOPIC_KEYWORDS = [
+  'technology','business','nature','space','city','food','animal','art','science','sport','travel',
+  'music','ocean','mountain','forest','sunset','car','robot','astronaut','startup','retro','neon',
+  'minimal','abstract','architecture','sky','sunrise','beach','party','office',
+];
+function pickKeyword() {
+  // ~65% chance to feature people
+  const pool = Math.random() < 0.65 ? PEOPLE_KEYWORDS : TOPIC_KEYWORDS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function imgUrlFor(seed: string, keyword: string) {
+  // Picsum is rock-solid and CORS-safe; the seed keeps the image stable across all clients.
+  // Keyword is encoded in the seed too so re-seeding stays deterministic.
+  const s = encodeURIComponent(`${seed}-${keyword}`);
+  return `https://picsum.photos/seed/${s}/1280/720`;
+}
+// People-only fallback so retries actually show humans
+function peopleFallbackUrl(seed: string) {
+  const s = encodeURIComponent(`${seed}-people`);
+  return `https://picsum.photos/seed/${s}/1280/720`;
+}
 
-function pickKeyword() { return IMG_KEYWORDS[Math.floor(Math.random() * IMG_KEYWORDS.length)]; }
-function imgUrlFor(seed: string) {
-  // Picsum is free, reliable and CORS-safe.
-  // Use the seed so the same slide stays the same image across players.
-  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/1280/720`;
+// Fisher-Yates shuffle for unique-template picks per talk
+function shuffle<T>(arr: T[]): T[] {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 type Phase = 'intro' | 'collect' | 'pres' | 'notes' | 'recap' | 'end';
