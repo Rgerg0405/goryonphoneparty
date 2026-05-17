@@ -691,6 +691,32 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     playClick();
   };
 
+  // ===== Ctrl+V paste image support =====
+  useEffect(() => {
+    if (!allowImageImport) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.type.startsWith('image/')) {
+          const f = it.getAsFile();
+          if (f) {
+            e.preventDefault();
+            // gif → overlay (animated), else new layer
+            if (f.type === 'image/gif') addImageOverlayFromFile(f);
+            else addImageOverlayFromFile(f);
+            playClick();
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowImageImport]);
+
   // ===== Overlay helpers (movable/resizable text + media) =====
   const addOverlay = (ov: Overlay) => {
     setOverlays((s) => [...s, ov]);
