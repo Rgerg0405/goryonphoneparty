@@ -14,6 +14,20 @@ export interface GameSettings {
   gameMode: string;
   maxPlayers: number;
   allowImageImport?: boolean;
+  // Scribble
+  scribbleRounds?: number;
+  scribbleDrawTime?: number;
+  scribbleCustomWords?: string;
+  // Blind Flight
+  blindRounds?: number;
+  blindDrawTime?: number;
+  blindDarkness?: number; // 0..1
+  // Animation
+  animFrames?: number;
+  animFrameTime?: number;
+  // Presentation
+  presSlides?: number;
+  presSlideTime?: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -23,6 +37,16 @@ export const DEFAULT_SETTINGS: GameSettings = {
   gameMode: 'normal',
   maxPlayers: 14,
   allowImageImport: false,
+  scribbleRounds: 3,
+  scribbleDrawTime: 60,
+  scribbleCustomWords: '',
+  blindRounds: 3,
+  blindDrawTime: 45,
+  blindDarkness: 0.85,
+  animFrames: 6,
+  animFrameTime: 30,
+  presSlides: 5,
+  presSlideTime: 25,
 };
 
 export interface GameEntry {
@@ -52,10 +76,10 @@ export const GAME_MODES = [
   { id: 'normal', name: 'NORMÁL', description: 'Klasszikus rajzolás és leírás', icon: '✏️' },
   { id: 'secret', name: 'TITOK', description: 'Nem látod mit rajzolsz!', icon: '🔒' },
   { id: 'modeling-3d', name: '3D MODELL', description: 'Rajz helyett 3D modellt építs', icon: '🧊' },
-  { id: 'scribble', name: 'SCRIBBLE', description: 'Hamarosan – tippelős rajz', icon: '✍️', soon: true },
-  { id: 'blind-flight', name: 'VAKREPÜLÉS', description: 'Hamarosan – sötétben rajzolsz', icon: '🌑', soon: true },
-  { id: 'animation', name: 'ANIMÁCIÓ', description: 'Hamarosan – képkockás GIF', icon: '🎬', soon: true },
-  { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Hamarosan – vicces prezi', icon: '🎤', soon: true },
+  { id: 'scribble', name: 'SCRIBBLE', description: 'Tippelős rajz, élő chat', icon: '✍️' },
+  { id: 'blind-flight', name: 'VAKREPÜLÉS', description: 'Sötétben rajzolsz, csillagok', icon: '🌑' },
+  { id: 'animation', name: 'ANIMÁCIÓ', description: 'Képkockás GIF, exportálható', icon: '🎬' },
+  { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Vicces prezi, közönség reakció', icon: '🎤' },
 ];
 
 export const TIME_OPTIONS = [
