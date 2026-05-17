@@ -70,7 +70,7 @@ export interface Reaction {
   timestamp: number;
 }
 
-export type GamePhase = 'lobby' | 'writing' | 'drawing' | 'describing' | 'album' | 'waiting';
+export type GamePhase = 'lobby' | 'writing' | 'drawing' | 'describing' | 'album' | 'waiting' | 'custom-mode';
 
 export const GAME_MODES = [
   { id: 'normal', name: 'NORMÁL', description: 'Klasszikus rajzolás és leírás', icon: '✏️' },
