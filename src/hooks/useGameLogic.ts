@@ -568,7 +568,7 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
     await supabase.from('parties').update({ status: 'playing' }).eq('id', g.partyId);
 
     // Custom (non-chain) modes — hand off to mode view
-    const customModes = ['scribble', 'blind-flight', 'animation', 'presentation'];
+    const customModes = ['scribble', 'blind-flight', 'animation', 'presentation', 'shooter-3d'];
     if (customModes.includes(g.settings.gameMode)) {
       channelRef.current?.send({
         type: 'broadcast',
