@@ -767,6 +767,13 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
               <span className="font-bold text-sm">📚 Rétegek</span>
               <button type="button" className="text-xs py-1 px-2 rounded border-2 border-border bg-card font-bold" onClick={addLayer}>+ Új</button>
             </div>
+            {allowImageImport && (
+              <label className="block mt-1 mb-2">
+                <span className="text-[11px] text-muted-foreground mb-1 block">🖼️ Importálj egy képet új rétegként:</span>
+                <input type="file" accept="image/*" onChange={handleImageInput}
+                  className="text-xs w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:font-bold cursor-pointer" />
+              </label>
+            )}
             <div className="space-y-1">
               {[...layers].reverse().map((l) => (
                 <div key={l.id} className={`flex items-center gap-1 p-1 rounded border-2 ${activeLayerId === l.id ? 'border-primary bg-primary/10' : 'border-border bg-card'}`}>
