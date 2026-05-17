@@ -1,4 +1,11 @@
 export const SCRIBBLE_WORDS = [
+  'kutya','macska','ház','fa','nap','hold','autó','busz','vonat','repülő','hajó','telefon','pizza','alma','banán',
+  'labda','óra','szív','korona','kalap','cipő','szemüveg','kulcs','ajtó','ablak','virág','felhő','eső','villám',
+  'hóember','robot','űrhajó','sárkány','szellem','boszorkány','kalóz','nindzsa','lovag','király','királynő',
+  'fagyi','hamburger','torta','palacsinta','popcorn','kávé','tea','csoki','sajt','kenyér','hot dog',
+  'elefánt','oroszlán','tigris','nyúl','róka','medve','pingvin','kacsa','béka','hal','cápa','polip','pók','méh',
+  'gitár','dob','zongora','mikrofon','fülhallgató','kamera','tévé','laptop','egér','billentyűzet',
+  'foci','kosár','tenisz','gördeszka','bicikli','roller','úszás','síelés','korcsolya','súlyzó',
   'zsiráf','pizza','űrhajó','sárkány','varázsló','dinoszaurusz','jégkrém','robot','egyszarvú','táltos',
   'kacsa','traktor','telefon','tévé','számítógép','vonat','repülő','tengeralattjáró','bicikli','kerékpár',
   'almafa','körte','görögdinnye','hamburger','sushi','tészta','tortás','fagyi','csoki','sajt',
