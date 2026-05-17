@@ -97,9 +97,12 @@ interface Props {
   isSecret?: boolean;
   disabled?: boolean;
   allowImageImport?: boolean;
+  hideSubmit?: boolean;
+  onChange?: (dataUrl: string) => void;
+  darknessOverlay?: number; // 0..1 dark veil over canvas
 }
 
-export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport }: Props) {
+export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport, hideSubmit, onChange, darknessOverlay }: Props) {
   const composedRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
   const [layers, setLayers] = useState<Layer[]>(() => {
