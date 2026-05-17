@@ -354,13 +354,23 @@ interface Props {
 
 export default function ThreeDEditor({ onSubmit, disabled }: Props) {
   const [shapes, setShapes] = useState<ShapeItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>('translate');
   const [paintOpen, setPaintOpen] = useState(false);
 
   const meshRefsRef = useRef<Map<string, THREE.Object3D>>(new Map());
   const orbitRef = useRef<any>(null);
   const draggingRef = useRef(false);
+  const dragStartRef = useRef<Map<string, {
+    position: THREE.Vector3;
+    scale: THREE.Vector3;
+    rotation: THREE.Euler;
+  }>>(new Map());
+  const leadStartRef = useRef<{
+    position: THREE.Vector3;
+    scale: THREE.Vector3;
+    rotation: THREE.Euler;
+  } | null>(null);
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.Camera | null>(null);
@@ -368,6 +378,26 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
   const registerRef = useCallback((id: string, m: THREE.Object3D | null) => {
     if (m) meshRefsRef.current.set(id, m); else meshRefsRef.current.delete(id);
   }, []);
+
+  const primaryId = selectedIds[0] || null;
+
+  const handlePickShape = useCallback((id: string, additive: boolean) => {
+    setSelectedIds((prev) => {
+      // If shape belongs to a group, expand selection to whole group.
+      const shape = shapes.find((s) => s.id === id);
+      const groupMembers = shape?.groupId
+        ? shapes.filter((s) => s.groupId === shape.groupId).map((s) => s.id)
+        : [id];
+      if (additive) {
+        const set = new Set(prev);
+        const allIn = groupMembers.every((m) => set.has(m));
+        if (allIn) groupMembers.forEach((m) => set.delete(m));
+        else groupMembers.forEach((m) => set.add(m));
+        return Array.from(set);
+      }
+      return groupMembers;
+    });
+  }, [shapes]);
 
   const addShape = useCallback((kind: ShapeKind) => {
     const item: ShapeItem = {
@@ -378,34 +408,62 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
       rotation: [0, 0, 0],
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
       textValue: kind === 'text' ? 'Szöveg' : undefined,
+      groupId: null,
     };
     setShapes((s) => [...s, item]);
-    setSelectedId(item.id);
+    setSelectedIds([item.id]);
     playClick();
   }, []);
 
-  const selected = shapes.find((s) => s.id === selectedId) || null;
+  const selected = shapes.find((s) => s.id === primaryId) || null;
 
   const updateSelected = (patch: Partial<ShapeItem>) => {
-    if (!selectedId) return;
-    setShapes((all) => all.map((s) => (s.id === selectedId ? { ...s, ...patch } : s)));
+    if (!primaryId) return;
+    setShapes((all) => all.map((s) => (selectedIds.includes(s.id) ? { ...s, ...patch } : s)));
   };
 
   const deleteSelected = () => {
-    if (!selectedId) return;
-    setShapes((s) => s.filter((x) => x.id !== selectedId));
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    setShapes((s) => s.filter((x) => !selectedIds.includes(x.id)));
+    setSelectedIds([]);
   };
 
   const duplicateSelected = () => {
-    if (!selected) return;
-    const copy: ShapeItem = {
-      ...selected,
-      id: crypto.randomUUID(),
-      position: [selected.position[0] + 0.5, selected.position[1], selected.position[2] + 0.5],
-    };
-    setShapes((s) => [...s, copy]);
-    setSelectedId(copy.id);
+    if (selectedIds.length === 0) return;
+    const idMap = new Map<string, string>();
+    const copies: ShapeItem[] = selectedIds.map((id) => {
+      const src = shapes.find((s) => s.id === id);
+      if (!src) return null as any;
+      const newId = crypto.randomUUID();
+      idMap.set(id, newId);
+      return {
+        ...src,
+        id: newId,
+        position: [src.position[0] + 0.5, src.position[1], src.position[2] + 0.5],
+      };
+    }).filter(Boolean) as ShapeItem[];
+    // keep groups together: re-map groupId so duplicated group becomes its own group
+    const groupRemap = new Map<string, string>();
+    copies.forEach((c) => {
+      if (c.groupId) {
+        if (!groupRemap.has(c.groupId)) groupRemap.set(c.groupId, crypto.randomUUID());
+        c.groupId = groupRemap.get(c.groupId)!;
+      }
+    });
+    setShapes((s) => [...s, ...copies]);
+    setSelectedIds(copies.map((c) => c.id));
+    playClick();
+  };
+
+  const groupSelected = () => {
+    if (selectedIds.length < 2) return;
+    const gid = crypto.randomUUID();
+    setShapes((all) => all.map((s) => selectedIds.includes(s.id) ? { ...s, groupId: gid } : s));
+    playClick();
+  };
+  const ungroupSelected = () => {
+    if (selectedIds.length === 0) return;
+    setShapes((all) => all.map((s) => selectedIds.includes(s.id) ? { ...s, groupId: null } : s));
     playClick();
   };
 
@@ -418,26 +476,73 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
       else if (e.key.toLowerCase() === 's') setMode('scale');
       else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const onTransformChange = useCallback(() => {
-    if (!selectedId) return;
-    const m = meshRefsRef.current.get(selectedId);
-    if (!m) return;
-    setShapes((all) => all.map((s) => (
-      s.id === selectedId ? {
+  const onTransformStart = useCallback(() => {
+    if (!primaryId) return;
+    dragStartRef.current.clear();
+    selectedIds.forEach((id) => {
+      const m = meshRefsRef.current.get(id);
+      if (m) dragStartRef.current.set(id, {
+        position: m.position.clone(),
+        scale: m.scale.clone(),
+        rotation: m.rotation.clone(),
+      });
+    });
+    const lead = meshRefsRef.current.get(primaryId);
+    if (lead) leadStartRef.current = {
+      position: lead.position.clone(),
+      scale: lead.scale.clone(),
+      rotation: lead.rotation.clone(),
+    };
+  }, [primaryId, selectedIds]);
+
+  const onTransformDelta = useCallback(() => {
+    if (!primaryId) return;
+    const lead = meshRefsRef.current.get(primaryId);
+    const leadStart = leadStartRef.current;
+    if (!lead || !leadStart) return;
+    const dPos = lead.position.clone().sub(leadStart.position);
+    const dRot = new THREE.Vector3(
+      lead.rotation.x - leadStart.rotation.x,
+      lead.rotation.y - leadStart.rotation.y,
+      lead.rotation.z - leadStart.rotation.z,
+    );
+    const sScale = new THREE.Vector3(
+      leadStart.scale.x !== 0 ? lead.scale.x / leadStart.scale.x : 1,
+      leadStart.scale.y !== 0 ? lead.scale.y / leadStart.scale.y : 1,
+      leadStart.scale.z !== 0 ? lead.scale.z / leadStart.scale.z : 1,
+    );
+    selectedIds.forEach((id) => {
+      if (id === primaryId) return;
+      const m = meshRefsRef.current.get(id);
+      const start = dragStartRef.current.get(id);
+      if (!m || !start) return;
+      m.position.copy(start.position).add(dPos);
+      m.rotation.set(start.rotation.x + dRot.x, start.rotation.y + dRot.y, start.rotation.z + dRot.z);
+      m.scale.set(start.scale.x * sScale.x, start.scale.y * sScale.y, start.scale.z * sScale.z);
+    });
+  }, [primaryId, selectedIds]);
+
+  const onTransformEnd = useCallback(() => {
+    setShapes((all) => all.map((s) => {
+      if (!selectedIds.includes(s.id)) return s;
+      const m = meshRefsRef.current.get(s.id);
+      if (!m) return s;
+      return {
         ...s,
         position: [m.position.x, m.position.y, m.position.z],
         scale: [m.scale.x, m.scale.y, m.scale.z],
         rotation: [m.rotation.x, m.rotation.y, m.rotation.z],
-      } : s
-    )));
-  }, [selectedId]);
+      };
+    }));
+  }, [selectedIds]);
 
-  const transformAttach = selectedId ? meshRefsRef.current.get(selectedId) ?? null : null;
+  const transformAttach = primaryId ? meshRefsRef.current.get(primaryId) ?? null : null;
 
   const handleSubmit = () => {
     if (!glRef.current || !sceneRef.current || !cameraRef.current) return;
