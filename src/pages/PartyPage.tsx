@@ -5,6 +5,10 @@ import Header from '@/components/game/Header';
 import LobbyView from '@/components/game/LobbyView';
 import GamePlayView from '@/components/game/GamePlayView';
 import AlbumView from '@/components/game/AlbumView';
+import ScribbleGameView from '@/components/game/ScribbleGameView';
+import BlindFlightView from '@/components/game/BlindFlightView';
+import AnimationGameView from '@/components/game/AnimationGameView';
+import PresentationGameView from '@/components/game/PresentationGameView';
 import bannerBg from '@/assets/goryonbanner.jpg';
 import { useState } from 'react';
 import { AVATARS, getAvatarDisplay } from '@/lib/avatars';
@@ -164,6 +168,23 @@ function PartyContent({ code, playerId, username, avatar }: {
               allowImageImport={game.settings.allowImageImport}
               onSubmit={game.submitEntry}
             />
+          )}
+
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'scribble' && (
+            <ScribbleGameView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'blind-flight' && (
+            <BlindFlightView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'animation' && (
+            <AnimationGameView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'presentation' && (
+            <PresentationGameView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
 
           {game.phase === 'album' && (

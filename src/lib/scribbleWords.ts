@@ -1,0 +1,26 @@
+export const SCRIBBLE_WORDS = [
+  'zsiráf','pizza','űrhajó','sárkány','varázsló','dinoszaurusz','jégkrém','robot','egyszarvú','táltos',
+  'kacsa','traktor','telefon','tévé','számítógép','vonat','repülő','tengeralattjáró','bicikli','kerékpár',
+  'almafa','körte','görögdinnye','hamburger','sushi','tészta','tortás','fagyi','csoki','sajt',
+  'oroszlán','elefánt','tigris','pingvin','medve','farkas','róka','nyúl','sün','denevér',
+  'kalóz','lovag','király','királynő','herceg','hercegnő','tündér','manó','boszorkány','vámpír',
+  'piramis','iglu','kastély','vízesés','vulkán','sziget','dzsungel','sivatag','tundra','barlang',
+  'gitár','dob','zongora','hegedű','trombita','fülhallgató','mikrofon','hangfal','headset','kazetta',
+  'hold','nap','csillag','rakéta','földgömb','meteorit','üstökös','galaxis','kvazár','idegen',
+  'tükör','lámpa','kanapé','könyvespolc','függöny','párna','takaró','asztal','szék','komód',
+  'futball','kosárlabda','tenisz','snowboard','sí','korcsolya','úszás','kötélmászás','jóga','futás',
+  'esernyő','táska','sapka','csizma','kesztyű','sál','napszemüveg','óra','gyűrű','nyaklánc',
+  'hokis','kalapács','fűrész','csavarhúzó','csavar','fogaskerék','csavarkulcs','téglafal','vakolat','festék',
+  'kávé','tea','limonádé','smoothie','milkshake','popcorn','pite','muffin','fánk','palacsinta',
+  'sárkányhajó','léghajó','sárkányrepülő','jetski','quad','autó','busz','motor','siklórepülő','helikopter',
+  'krokodil','flamingó','páva','panda','koala','kenguru','wombat','okapi','hangya','méhecske',
+  'tornádó','hurrikán','szivárvány','napfogyatkozás','holdtölte','aurora','meteorzápor','csillaghullás','sarki fény','virágeső',
+];
+
+export function pickScribbleWord(custom?: string): string {
+  if (custom) {
+    const list = custom.split(',').map((w) => w.trim()).filter(Boolean);
+    if (list.length > 0) return list[Math.floor(Math.random() * list.length)];
+  }
+  return SCRIBBLE_WORDS[Math.floor(Math.random() * SCRIBBLE_WORDS.length)];
+}

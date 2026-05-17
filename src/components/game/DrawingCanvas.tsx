@@ -97,9 +97,12 @@ interface Props {
   isSecret?: boolean;
   disabled?: boolean;
   allowImageImport?: boolean;
+  hideSubmit?: boolean;
+  onChange?: (dataUrl: string) => void;
+  darknessOverlay?: number; // 0..1 dark veil over canvas
 }
 
-export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport }: Props) {
+export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport, hideSubmit, onChange, darknessOverlay }: Props) {
   const composedRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
   const [layers, setLayers] = useState<Layer[]>(() => {
@@ -148,6 +151,21 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     // preview overlay
     if (previewRef.current) ctx.drawImage(previewRef.current, 0, 0);
   }, [layers]);
+
+  // Throttled live broadcast for modes that need it
+  const lastLiveRef = useRef(0);
+  useEffect(() => {
+    if (!onChange) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      if (now - lastLiveRef.current < 700) return;
+      lastLiveRef.current = now;
+      const c = composedRef.current;
+      if (!c) return;
+      try { onChange(c.toDataURL('image/jpeg', 0.55)); } catch {}
+    }, 750);
+    return () => clearInterval(id);
+  }, [onChange]);
 
   // Animation loop for video / gif overlays
   useEffect(() => {
@@ -1092,7 +1110,9 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
             <button className="game-btn bg-card py-1 px-3" onClick={redo} disabled={redoStack.length === 0}>↪️ Előre</button>
             <button className="game-btn bg-card py-1 px-3" onClick={clearActive}>🗑️ Réteg törlése</button>
             <div className="flex-1" />
-            <button className="game-btn-primary py-1 px-4" onClick={handleSubmit} disabled={disabled}>✅ KÉSZ!</button>
+            {!hideSubmit && (
+              <button className="game-btn-primary py-1 px-4" onClick={handleSubmit} disabled={disabled}>✅ KÉSZ!</button>
+            )}
           </div>
 
           <div className="overflow-auto rounded-xl border border-border bg-card/50 max-h-[70vh]">
@@ -1149,6 +1169,9 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
                     </div>
                   );
                 })}
+                {darknessOverlay && darknessOverlay > 0 && (
+                  <div style={{ position: 'absolute', inset: 0, background: '#000', opacity: darknessOverlay, pointerEvents: 'none', borderRadius: 8 }} />
+                )}
               </div>
             </div>
           </div>
