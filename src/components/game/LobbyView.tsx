@@ -291,6 +291,35 @@ function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
       </div>
     );
   }
+  if (mode === 'music-quiz') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🎵 Zenekitaláló beállítások</div>
+        <NumberRow label="Körök" value={settings.musicRounds ?? 8} min={3} max={20} disabled={!isHost} onChange={(v) => onUpdateSettings({ musicRounds: v })} />
+        <label className="block">
+          <span className="text-[11px] font-bold block mb-1">Műfaj</span>
+          <select value={settings.musicGenre ?? 'pop'} disabled={!isHost}
+            onChange={(e) => onUpdateSettings({ musicGenre: e.target.value })}
+            className="game-input text-xs w-full">
+            <option value="pop">Pop</option>
+            <option value="rock">Rock</option>
+            <option value="hungarian">Magyar</option>
+            <option value="rap">Rap / Hip-hop</option>
+            <option value="classic">Klasszikusok</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+  if (mode === 'slither') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🐍 Kukac beállítások</div>
+        <NumberRow label="Játékidő (mp)" value={settings.slitherDuration ?? 120} min={60} max={300} step={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ slitherDuration: v })} />
+        <p className="text-[10px] text-muted-foreground">Mozgasd az egeret. Eszel = növekedsz. Falba/másba ütközés = halál.</p>
+      </div>
+    );
+  }
   return null;
 }
 
