@@ -568,6 +568,34 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     playClick();
   };
 
+  // ===== Image import (új réteg) =====
+  const importImageFromFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const layer = makeLayer(`Kép ${layers.length}`);
+        const ctx = layer.canvas.getContext('2d')!;
+        const scale = Math.min((CANVAS_W * 0.7) / img.width, (CANVAS_H * 0.7) / img.height, 1);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
+        setLayers((s) => [...s, layer]);
+        setActiveLayerId(layer.id);
+        setTimeout(compose, 0);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) importImageFromFile(f);
+    e.target.value = '';
+    playClick();
+  };
+
   // ===== input handlers =====
   const SHAPE_TOOLS: Tool[] = ['line', 'rect', 'circle', 'triangle', 'star', 'arrow', 'polygon'];
 
