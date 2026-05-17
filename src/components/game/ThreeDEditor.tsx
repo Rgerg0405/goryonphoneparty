@@ -606,7 +606,11 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
 
         {selected ? (
           <div className="space-y-3 border-t-2 border-border pt-3">
-            <div className="font-bold text-sm">Kijelölt: {selected.kind}</div>
+            <div className="font-bold text-sm">
+              Kijelölt: {selected.kind}
+              {selectedIds.length > 1 && <span className="ml-1 text-primary">+{selectedIds.length - 1}</span>}
+              {selected.groupId && <span className="ml-1 text-accent">🧩 csoport</span>}
+            </div>
 
             {selected.kind === 'text' && (
               <div>
@@ -621,6 +625,16 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
               <button type="button" className="game-btn bg-card text-xs py-2" onClick={duplicateSelected}>📑 Másol</button>
               <button type="button" className="game-btn bg-destructive text-destructive-foreground text-xs py-2" onClick={deleteSelected}>🗑️ Töröl</button>
             </div>
+
+            <div className="grid grid-cols-2 gap-1">
+              <button type="button" className="game-btn bg-card text-xs py-2 disabled:opacity-50"
+                disabled={selectedIds.length < 2}
+                onClick={groupSelected} title="Ctrl+G">🧩 Csoport</button>
+              <button type="button" className="game-btn bg-card text-xs py-2 disabled:opacity-50"
+                disabled={!selected.groupId}
+                onClick={ungroupSelected} title="Ctrl+Shift+G">💔 Bont</button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Shift+kattintás: több kijelölés. Csoportban mozgás együtt.</p>
 
             {selected.kind !== 'text' && (
               <>
