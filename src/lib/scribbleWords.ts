@@ -24,10 +24,13 @@ export const SCRIBBLE_WORDS = [
   'tornádó','hurrikán','szivárvány','napfogyatkozás','holdtölte','aurora','meteorzápor','csillaghullás','sarki fény','virágeső',
 ];
 
-export function pickScribbleWord(custom?: string): string {
+export function pickScribbleWord(custom?: string, used?: Set<string>): string {
+  let pool: string[] = [];
   if (custom) {
-    const list = custom.split(',').map((w) => w.trim()).filter(Boolean);
-    if (list.length > 0) return list[Math.floor(Math.random() * list.length)];
+    pool = custom.split(',').map((w) => w.trim()).filter(Boolean);
   }
-  return SCRIBBLE_WORDS[Math.floor(Math.random() * SCRIBBLE_WORDS.length)];
+  if (pool.length === 0) pool = Array.from(new Set(SCRIBBLE_WORDS));
+  const available = used ? pool.filter((w) => !used.has(w.toLowerCase())) : pool;
+  const final = available.length > 0 ? available : pool;
+  return final[Math.floor(Math.random() * final.length)];
 }
