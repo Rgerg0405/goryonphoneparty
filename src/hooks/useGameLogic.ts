@@ -528,6 +528,39 @@ export function useGameLogic(code: string | undefined, playerId: string, usernam
 
     await supabase.from('parties').update({ status: 'playing' }).eq('id', g.partyId);
 
+    // Custom (non-chain) modes — hand off to mode view
+    const customModes = ['scribble', 'blind-flight', 'animation', 'presentation'];
+    if (customModes.includes(g.settings.gameMode)) {
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'game:phase',
+        payload: {
+          phase: 'custom-mode',
+          step: 0,
+          totalSteps: 0,
+          playerOrder: order,
+          timeRemaining: 0,
+          sessionNumber: g.sessionNumber,
+          partyId: g.partyId,
+        },
+      });
+      submissionsRef.current = new Set();
+      updateGame({
+        phase: 'custom-mode',
+        step: 0,
+        totalSteps: 0,
+        playerOrder: order,
+        totalPlayers: order.length,
+        currentContent: null,
+        myChainIndex: order.indexOf(playerId),
+        hasSubmitted: false,
+        submittedCount: 0,
+        timeRemaining: 0,
+      });
+      playNotification();
+      return;
+    }
+
     channelRef.current?.send({
       type: 'broadcast',
       event: 'game:phase',
