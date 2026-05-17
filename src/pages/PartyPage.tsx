@@ -11,6 +11,8 @@ import AnimationGameView from '@/components/game/AnimationGameView';
 import PresentationGameView from '@/components/game/PresentationGameView';
 import Shooter3DGameView from '@/components/game/Shooter3DGameView';
 import GeoGuesserView from '@/components/game/GeoGuesserView';
+import MusicQuizView from '@/components/game/MusicQuizView';
+import SlitherGameView from '@/components/game/SlitherGameView';
 import bannerBg from '@/assets/goryonbanner.jpg';
 import { useState } from 'react';
 import { AVATARS, getAvatarDisplay } from '@/lib/avatars';
@@ -194,6 +196,14 @@ function PartyContent({ code, playerId, username, avatar }: {
           )}
           {game.phase === 'custom-mode' && game.settings.gameMode === 'geoguesser' && (
             <GeoGuesserView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'music-quiz' && (
+            <MusicQuizView code={code} players={game.players} playerId={playerId} username={username}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'slither' && (
+            <SlitherGameView code={code} players={game.players} playerId={playerId} username={username}
               isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
 

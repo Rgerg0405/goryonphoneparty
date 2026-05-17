@@ -4,6 +4,7 @@ import { Player, GameSettings } from '@/lib/gameTypes';
 import { pickScribbleWord } from '@/lib/scribbleWords';
 import DrawingCanvas from './DrawingCanvas';
 import { playClick, playPop, playNotification } from '@/lib/sounds';
+import { getAvatarDisplay } from '@/lib/avatars';
 
 interface Props {
   code: string; players: Player[]; playerId: string; username: string;
@@ -11,7 +12,9 @@ interface Props {
 }
 
 type Msg = { id: string; pid: string; name: string; text: string; correct: boolean; t: number; points?: number };
-type Round = { drawerId: string; word: string; startAt: number; deadlineAt: number; idx: number };
+type Round = { drawerId: string; word: string; startAt: number; deadlineAt: number; idx: number; usedWords: string[] };
+type FloatingReaction = { id: string; pid: string; emoji: string; t: number };
+const REACTIONS = ['❤️', '😂', '😮', '🔥', '👏', '💩', '🎉', '🤔'];
 
 function maskWord(w: string) {
   return w.split('').map((c) => (c === ' ' ? ' ' : '_')).join('');
@@ -29,6 +32,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const scoresRef = useRef<Record<string, number>>({});
   const roundIdxRef = useRef(0);
   const solvedRef = useRef<Set<string>>(new Set());
+  const usedWordsRef = useRef<Set<string>>(new Set());
 
   const [roundIdx, setRoundIdx] = useState(0);
   const [round, setRound] = useState<Round | null>(null);
@@ -40,6 +44,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const [guess, setGuess] = useState('');
   const [liveDrawing, setLiveDrawing] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<string>('');
+  const [floats, setFloats] = useState<FloatingReaction[]>([]);
 
   useEffect(() => { scoresRef.current = scores; }, [scores]);
   useEffect(() => { roundIdxRef.current = roundIdx; }, [roundIdx]);
@@ -55,12 +60,15 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   function startRound(idx: number) {
     endedRef.current = false;
     const drawer = players[idx % players.length];
+    const word = pickScribbleWord(settings.scribbleCustomWords, usedWordsRef.current);
+    usedWordsRef.current.add(word.toLowerCase());
     const r: Round = {
       drawerId: drawer.player_id,
-      word: pickScribbleWord(settings.scribbleCustomWords),
+      word,
       startAt: Date.now(),
       deadlineAt: Date.now() + drawTime * 1000,
       idx,
+      usedWords: Array.from(usedWordsRef.current),
     };
     setRoundIdx(idx);
     setRound(r);
@@ -103,6 +111,9 @@ export default function ScribbleGameView({ code, players, playerId, username, is
       setMessages([]);
       setLiveDrawing(null);
       setPhase('play');
+      if (Array.isArray(payload.usedWords)) {
+        usedWordsRef.current = new Set(payload.usedWords);
+      }
       playNotification();
     });
     ch.on('broadcast', { event: 'guess' }, ({ payload }) => {
@@ -126,6 +137,12 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     });
     ch.on('broadcast', { event: 'live:draw' }, ({ payload }) => {
       if (payload.drawerId !== playerId) setLiveDrawing(payload.dataUrl);
+    });
+    ch.on('broadcast', { event: 'reaction' }, ({ payload }) => {
+      const f: FloatingReaction = { id: crypto.randomUUID(), pid: payload.pid, emoji: payload.emoji, t: Date.now() };
+      setFloats((all) => [...all, f]);
+      setTimeout(() => setFloats((all) => all.filter((x) => x.id !== f.id)), 2500);
+      playPop();
     });
     ch.on('broadcast', { event: 'reveal' }, ({ payload }) => {
       setRevealed(payload.mask);
@@ -223,6 +240,15 @@ export default function ScribbleGameView({ code, players, playerId, username, is
 
   const sortedScores = Object.entries(scores).sort((a, b) => b[1] - a[1]);
 
+  const sendReaction = (emoji: string) => {
+    const payload = { pid: playerId, emoji };
+    channelRef.current?.send({ type: 'broadcast', event: 'reaction', payload });
+    const f: FloatingReaction = { id: crypto.randomUUID(), pid: playerId, emoji, t: Date.now() };
+    setFloats((all) => [...all, f]);
+    setTimeout(() => setFloats((all) => all.filter((x) => x.id !== f.id)), 2500);
+    playPop();
+  };
+
   if (phase === 'end') {
     return (
       <div className="max-w-2xl mx-auto p-4 space-y-4">
@@ -248,7 +274,50 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const drawer = players.find((p) => p.player_id === currentDrawerId);
 
   return (
-    <div className="max-w-[1500px] mx-auto p-2 md:p-3 grid xl:grid-cols-[minmax(0,1fr)_340px] gap-3">
+    <div className="max-w-[1700px] mx-auto p-2 md:p-3 grid xl:grid-cols-[260px_minmax(0,1fr)_340px] gap-3">
+      {/* Left: player list + reactions */}
+      <div className="game-card ios-glass space-y-2 h-[55vh] xl:h-[75vh] min-h-[360px] flex flex-col">
+        <div className="font-bold text-sm">👥 Játékosok</div>
+        <div className="flex-1 overflow-y-auto space-y-1">
+          {players.map((p) => {
+            const av = getAvatarDisplay(p.avatar);
+            const sc = scores[p.player_id] || 0;
+            const isDrawerNow = currentDrawerId === p.player_id;
+            const hasSolved = solved.has(p.player_id);
+            const floating = floats.find((f) => f.pid === p.player_id);
+            return (
+              <div key={p.player_id} className={`relative flex items-center gap-2 p-1.5 rounded-lg ${isDrawerNow ? 'bg-primary/20 border border-primary' : 'bg-card/60'}`}>
+                {av.src ? (
+                  <img src={av.src} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                ) : (
+                  <span className="w-8 h-8 rounded-lg flex items-center justify-center text-lg bg-card">{av.emoji}</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold truncate flex items-center gap-1">
+                    {p.username}
+                    {isDrawerNow && <span title="rajzol">✏️</span>}
+                    {hasSolved && <span title="kitalálta">✅</span>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{sc} pt</div>
+                </div>
+                {floating && (
+                  <span key={floating.id} className="absolute -top-2 right-1 text-2xl animate-bounce pointer-events-none">{floating.emoji}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div>
+          <div className="text-[10px] font-bold mb-1 text-muted-foreground">REAKCIÓ KÜLDÉSE</div>
+          <div className="grid grid-cols-4 gap-1">
+            {REACTIONS.map((e) => (
+              <button key={e} type="button" onClick={() => sendReaction(e)}
+                className="text-xl py-1 rounded-lg bg-card hover:bg-primary/20 active:scale-95 transition">{e}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-2">
         <div className="game-card py-2 px-3 md:px-4 grid grid-cols-3 items-center gap-2 text-center">
           <div className="font-bold text-sm">Kör {roundIdx + 1}/{totalRounds}</div>
