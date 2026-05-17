@@ -352,7 +352,7 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
           <div className="font-bold">🌍 Kör {round}/{totalRounds} — eredmény</div>
         </div>
         <div className="rounded-2xl overflow-hidden border-2 border-border shadow-2xl" style={{ height: '55vh' }}>
-          <div ref={resultMapDivRef} className="w-full h-full" />
+          <div key={`result-${round}-${loc?.id ?? 'x'}`} ref={resultMapDivRef} className="w-full h-full bg-muted" />
         </div>
         <div className="game-card ios-glass space-y-1 text-sm">
           {[...guesses].sort((a, b) => b.score - a.score).map((g) => (
