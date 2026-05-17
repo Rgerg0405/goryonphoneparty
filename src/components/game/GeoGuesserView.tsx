@@ -385,8 +385,8 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
         </div>
       )}
 
-      {/* Street View — full screen */}
-      <div ref={panoDivRef} className="absolute inset-0" />
+      {/* Street View — full screen (key forces fresh mount each round) */}
+      <div key={`pano-${round}-${loc?.id ?? 'x'}`} ref={panoDivRef} className="absolute inset-0" />
 
       {/* Top HUD */}
       <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-2 p-2 md:p-3 pointer-events-none">
