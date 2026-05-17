@@ -196,8 +196,10 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
   useEffect(() => {
     if (!mapsReady || phase !== 'guessing' || !loc || !panoDivRef.current) return;
     const g = window.google;
-    if (!panoRef.current) {
-      panoRef.current = new g.maps.StreetViewPanorama(panoDivRef.current, {
+    // Always create a fresh panorama for each round so old DOM never leaks
+    try { panoRef.current?.setVisible?.(false); } catch {}
+    panoDivRef.current.innerHTML = '';
+    panoRef.current = new g.maps.StreetViewPanorama(panoDivRef.current, {
         position: { lat: loc.lat, lng: loc.lng },
         pov: { heading: Math.random() * 360, pitch: 0 },
         zoom: 0,
@@ -210,13 +212,29 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
         motionTracking: false,
         motionTrackingControl: false,
         enableCloseButton: false,
-      });
-    } else {
-      panoRef.current.setPosition({ lat: loc.lat, lng: loc.lng });
-      panoRef.current.setPov({ heading: Math.random() * 360, pitch: 0 });
-      panoRef.current.setZoom(0);
-    }
+    });
   }, [mapsReady, phase, loc?.id]);
+
+  // ===== Hard cleanup: kill the panorama whenever we leave the guessing phase =====
+  useEffect(() => {
+    if (phase === 'guessing') return;
+    try { panoRef.current?.setVisible?.(false); } catch {}
+    panoRef.current = null;
+    if (panoDivRef.current) panoDivRef.current.innerHTML = '';
+    if (mapRef.current) {
+      mapRef.current = null;
+    }
+    if (guessMarkerRef.current) {
+      try { guessMarkerRef.current.setMap(null); } catch {}
+      guessMarkerRef.current = null;
+    }
+  }, [phase]);
+
+  // Unmount-time cleanup
+  useEffect(() => () => {
+    try { panoRef.current?.setVisible?.(false); } catch {}
+    panoRef.current = null;
+  }, []);
 
   // ===== Init guessing mini-map =====
   useEffect(() => {
