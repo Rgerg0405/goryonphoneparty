@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Grid, TransformControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -41,14 +41,6 @@ const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
 ];
 
 const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#7c3aed', '#000000', '#ffffff', '#f97316'];
-
-function makeTextureFromImage(url: string): THREE.Texture {
-  const loader = new THREE.TextureLoader();
-  const t = loader.load(url);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.needsUpdate = true;
-  return t;
-}
 
 function ShapeMesh({
   shape, selected, onPick, registerRef, draggingRef,
