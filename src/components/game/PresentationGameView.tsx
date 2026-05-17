@@ -248,14 +248,17 @@ export default function PresentationGameView({ code, players, playerId, username
   }
 
   function startPresentation(idx: number, sourceTitles = titlesRef.current) {
+    // unique templates + unique emojis per talk (no repeats unless list shorter than slidesPerTalk)
+    const tplPool = shuffle(PRES_TEMPLATES);
+    const emojiPool = shuffle(SLIDE_EMOJIS);
     const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, (_, i) => {
       const kw = pickKeyword();
       const seed = `${code}-${idx}-${i}-${kw}-${Math.floor(Math.random() * 100000)}`;
       return {
-        emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
-        template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
+        emoji: emojiPool[i % emojiPool.length],
+        template: tplPool[i % tplPool.length],
         keyword: kw,
-        img: imgUrlFor(seed),
+        img: imgUrlFor(seed, kw),
       };
     });
     setPresenterIdx(idx); setSlideIdx(0); setSlides(newSlides); setGauge(0); setPhase('pres');
