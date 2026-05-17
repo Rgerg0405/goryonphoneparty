@@ -73,6 +73,13 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
   useEffect(() => { guessesRef.current = guesses; }, [guesses]);
   useEffect(() => { scoresRef.current = scores; }, [scores]);
 
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef<{ dragging: boolean; sx: number; sy: number; ox: number; oy: number; moved: boolean }>({
+    dragging: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: false,
+  });
+  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [round]);
+
   const usedLocsRef = useRef<Set<string>>(new Set());
 
   function pickRandomLoc(): Loc {
@@ -191,23 +198,13 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     hostStartRound(round + 1);
   }
 
-  // Map click handler: convert pixel to lat/lng (equirectangular)
-  const onMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (submitted || phase !== 'guessing') return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    const lng = x * 360 - 180;
-    const lat = 90 - y * 180;
-    setMyGuess({ lat, lng });
-    playClick();
-  };
-
-  // Google Maps Street View embed (no API key needed).
-  // The `svembed` output renders the actual Street View panorama for the given coordinates.
-  const streetViewSrc = loc
-    ? `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${Math.floor(Math.random()*360)},0,0,0&output=svembed`
-    : '';
+  // Stable per-round street view URL so the iframe doesn't re-mount on every render
+  const stableStreetViewSrc = useMemo(() => {
+    if (!loc) return '';
+    const heading = Math.floor(Math.random() * 360);
+    return `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${heading},0,0,0&output=svembed`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc?.id, round]);
 
   const sortedScores = useMemo(() => (
     players.map((p) => ({ playerId: p.player_id, username: p.username, score: scores[p.player_id] || 0 }))
@@ -249,17 +246,25 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
         {/* Street view */}
         <div className="game-card p-2">
           <div className="text-xs font-bold mb-1 text-center">🛣️ Nézz körül!</div>
-          <div className="rounded-xl overflow-hidden bg-card" style={{ aspectRatio: '16/10' }}>
+          <div className="relative rounded-xl overflow-hidden bg-card" style={{ aspectRatio: '16/10' }}>
             {loc && (
               <iframe
                 key={loc.id + round}
                 title="Street view"
-                src={streetViewSrc}
+                src={stableStreetViewSrc}
                 className="w-full h-full border-0"
                 allow="accelerometer; gyroscope; fullscreen"
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
               />
+            )}
+            {phase === 'guessing' && (
+              <>
+                <div className="absolute top-0 left-0 right-0 h-10 bg-card/95 backdrop-blur pointer-events-none flex items-center justify-center text-xs font-bold">
+                  🕵️ Hol vagy? Fedezd fel a környéket!
+                </div>
+                <div className="absolute bottom-0 left-0 h-7 w-44 bg-card/90 pointer-events-none" />
+              </>
             )}
           </div>
         </div>
@@ -267,37 +272,91 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
         {/* Map */}
         <div className="game-card p-2">
           <div className="text-xs font-bold mb-1 text-center">
-            {phase === 'guessing' ? '🗺️ Kattints a térképre!' : '🗺️ Eredmények'}
+            {phase === 'guessing' ? '🗺️ Kattints a térképre! (görgő/+ − = zoom, húzd a pánhoz)' : '🗺️ Eredmények'}
           </div>
-          <div
-            className="relative w-full overflow-hidden rounded-xl border-2 border-border cursor-crosshair select-none"
-            style={{ aspectRatio: '2/1', backgroundImage: `url(${WORLD_MAP_URL})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-            onClick={onMapClick}
-          >
-            {/* My guess marker */}
-            {myGuess && phase === 'guessing' && (
-              <MarkerPin lat={myGuess.lat} lng={myGuess.lng} color="#3b82f6" label="te" />
-            )}
-            {/* Reveal: all markers + true location */}
-            {phase === 'reveal' && (
-              <>
-                {guesses.map((g) => (
-                  <MarkerPin key={g.playerId} lat={g.lat} lng={g.lng} color="#3b82f6" label={g.username} />
-                ))}
-                {loc && <MarkerPin lat={loc.lat} lng={loc.lng} color="#ef4444" label="🎯" />}
-                {/* lines from each guess to truth */}
-                {loc && (
-                  <svg className="absolute inset-0 pointer-events-none w-full h-full">
-                    {guesses.map((g) => {
-                      const p1 = latLngToPct(g.lat, g.lng);
-                      const p2 = latLngToPct(loc.lat, loc.lng);
-                      return <line key={g.playerId} x1={`${p1.x}%`} y1={`${p1.y}%`} x2={`${p2.x}%`} y2={`${p2.y}%`}
-                        stroke="#3b82f6" strokeWidth="2" strokeDasharray="4 3" opacity="0.7" />;
-                    })}
-                  </svg>
+          <div className="relative">
+            <div
+              className="relative w-full overflow-hidden rounded-xl border-2 border-border cursor-crosshair select-none touch-none bg-card"
+              style={{ aspectRatio: '2/1' }}
+              onWheel={(e) => {
+                e.preventDefault();
+                const rect = e.currentTarget.getBoundingClientRect();
+                const cx = (e.clientX - rect.left) / rect.width;
+                const cy = (e.clientY - rect.top) / rect.height;
+                const delta = e.deltaY > 0 ? 0.85 : 1.18;
+                const newZoom = Math.max(1, Math.min(8, zoom * delta));
+                const k = newZoom / zoom;
+                setPan((p) => ({ x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }));
+                setZoom(newZoom);
+              }}
+              onPointerDown={(e) => {
+                (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+                panRef.current = { dragging: true, sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y, moved: false };
+              }}
+              onPointerMove={(e) => {
+                const s = panRef.current; if (!s.dragging) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const dx = (e.clientX - s.sx) / rect.width;
+                const dy = (e.clientY - s.sy) / rect.height;
+                if (Math.abs(e.clientX - s.sx) > 4 || Math.abs(e.clientY - s.sy) > 4) s.moved = true;
+                setPan({ x: s.ox + dx, y: s.oy + dy });
+              }}
+              onPointerUp={(e) => {
+                const s = panRef.current; s.dragging = false;
+                if (!s.moved && phase === 'guessing' && !submitted) {
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const rawX = (e.clientX - rect.left) / rect.width;
+                  const rawY = (e.clientY - rect.top) / rect.height;
+                  const x = (rawX - pan.x) / zoom;
+                  const y = (rawY - pan.y) / zoom;
+                  if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+                    setMyGuess({ lat: 90 - y * 180, lng: x * 360 - 180 });
+                    playClick();
+                  }
+                }
+              }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
+                  transformOrigin: '0 0',
+                  backgroundImage: `url(${WORLD_MAP_URL})`,
+                  backgroundSize: '100% 100%',
+                  willChange: 'transform',
+                }}
+              >
+                {myGuess && phase === 'guessing' && (
+                  <MarkerPin lat={myGuess.lat} lng={myGuess.lng} color="#3b82f6" label="te" scale={1 / zoom} />
                 )}
-              </>
-            )}
+                {phase === 'reveal' && (
+                  <>
+                    {guesses.map((g) => (
+                      <MarkerPin key={g.playerId} lat={g.lat} lng={g.lng} color="#3b82f6" label={g.username} scale={1 / zoom} />
+                    ))}
+                    {loc && <MarkerPin lat={loc.lat} lng={loc.lng} color="#ef4444" label="🎯" scale={1 / zoom} />}
+                    {loc && (
+                      <svg className="absolute inset-0 pointer-events-none w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        {guesses.map((g) => {
+                          const p1 = latLngToPct(g.lat, g.lng);
+                          const p2 = latLngToPct(loc.lat, loc.lng);
+                          return <line key={g.playerId} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                            stroke="#3b82f6" strokeWidth={0.3 / zoom} strokeDasharray={`${0.8 / zoom} ${0.5 / zoom}`} opacity="0.7" />;
+                        })}
+                      </svg>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
+              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border font-bold text-lg shadow"
+                onClick={() => { const nz = Math.min(8, zoom * 1.4); setPan((p) => ({ x: 0.5 - (0.5 - p.x) * (nz / zoom), y: 0.5 - (0.5 - p.y) * (nz / zoom) })); setZoom(nz); }}>+</button>
+              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border font-bold text-lg shadow"
+                onClick={() => { const nz = Math.max(1, zoom / 1.4); setPan((p) => ({ x: 0.5 - (0.5 - p.x) * (nz / zoom), y: 0.5 - (0.5 - p.y) * (nz / zoom) })); setZoom(nz); }}>−</button>
+              <button className="w-8 h-8 rounded-lg bg-card/95 border border-border text-xs shadow"
+                onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⟲</button>
+            </div>
           </div>
 
           {phase === 'guessing' && (
@@ -349,11 +408,11 @@ function latLngToPct(lat: number, lng: number) {
   return { x: ((lng + 180) / 360) * 100, y: ((90 - lat) / 180) * 100 };
 }
 
-function MarkerPin({ lat, lng, color, label }: { lat: number; lng: number; color: string; label: string }) {
+function MarkerPin({ lat, lng, color, label, scale = 1 }: { lat: number; lng: number; color: string; label: string; scale?: number }) {
   const p = latLngToPct(lat, lng);
   return (
     <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center" style={{ transform: `scale(${scale})`, transformOrigin: 'bottom center' }}>
         <div className="text-[10px] font-bold px-1 rounded bg-background/80 border border-border whitespace-nowrap mb-0.5">{label}</div>
         <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ backgroundColor: color }} />
       </div>
