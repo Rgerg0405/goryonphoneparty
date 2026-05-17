@@ -220,6 +220,24 @@ export default function SlitherGameView({ code, players, playerId, username, isH
           channelRef.current?.send({ type: 'broadcast', event: 'slither:worm', payload: me });
         }
       }
+      // Respawn dead worm after 3s
+      if (me && !me.alive) {
+        const since = (me as any)._diedAt as number | undefined;
+        if (!since) {
+          (me as any)._diedAt = Date.now();
+        } else if (Date.now() - since > 3000) {
+          const angle = Math.random() * Math.PI * 2;
+          me.x = WORLD / 2 + Math.cos(angle) * 200;
+          me.y = WORLD / 2 + Math.sin(angle) * 200;
+          me.angle = angle;
+          me.length = 30;
+          me.segments = [];
+          me.alive = true;
+          (me as any)._diedAt = undefined;
+          playNotification();
+          channelRef.current?.send({ type: 'broadcast', event: 'slither:worm', payload: me });
+        }
+      }
       draw();
       raf = requestAnimationFrame(loop);
     };
