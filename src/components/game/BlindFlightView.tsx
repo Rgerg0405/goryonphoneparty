@@ -19,6 +19,7 @@ export default function BlindFlightView({ code, players, playerId, username, isH
   const channelRef = useRef<any>(null);
   const endedRef = useRef(false);
   const ratedRef = useRef<Set<string>>(new Set());
+  const scoresRef = useRef<Record<string, number>>({});
 
   const [roundIdx, setRoundIdx] = useState(0);
   const [round, setRound] = useState<Round | null>(null);
@@ -28,6 +29,8 @@ export default function BlindFlightView({ code, players, playerId, username, isH
   const [scores, setScores] = useState<Record<string, number>>({});
   const [myRating, setMyRating] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState(drawTime);
+
+  useEffect(() => { scoresRef.current = scores; }, [scores]);
 
   const totalRounds = rounds * players.length;
   const currentDrawerId = round?.drawerId ?? players[roundIdx % players.length]?.player_id;
@@ -49,7 +52,11 @@ export default function BlindFlightView({ code, players, playerId, username, isH
   }
 
   function goNext(nextIdx: number) {
-    if (nextIdx >= totalRounds) { setPhase('end'); return; }
+    if (nextIdx >= totalRounds) {
+      channelRef.current?.send({ type: 'broadcast', event: 'game:end', payload: { scores: scoresRef.current } });
+      setPhase('end');
+      return;
+    }
     if (isHost) startRound(nextIdx);
   }
 
@@ -77,7 +84,11 @@ export default function BlindFlightView({ code, players, playerId, username, isH
     ch.on('broadcast', { event: 'rate' }, ({ payload }) => {
       if (ratedRef.current.has(payload.raterId)) return;
       ratedRef.current.add(payload.raterId);
-      setScores((sc) => ({ ...sc, [payload.drawerId]: (sc[payload.drawerId] || 0) + payload.stars }));
+      setScores((sc) => {
+        const updated = { ...sc, [payload.drawerId]: (sc[payload.drawerId] || 0) + payload.stars };
+        scoresRef.current = updated;
+        return updated;
+      });
       // host: if all non-drawers rated, advance
       if (isHost) {
         const guessers = players.filter((p) => p.player_id !== payload.drawerId).length;
@@ -91,6 +102,12 @@ export default function BlindFlightView({ code, players, playerId, username, isH
     });
     ch.on('broadcast', { event: 'round:next' }, ({ payload }) => {
       if (payload.idx >= totalRounds) setPhase('end');
+      else if (isHost) startRound(payload.idx);
+      else setPhase('play');
+    });
+    ch.on('broadcast', { event: 'game:end' }, ({ payload }) => {
+      setScores(payload.scores || scoresRef.current);
+      setPhase('end');
     });
     ch.subscribe((s) => { if (s === 'SUBSCRIBED' && isHost) setTimeout(() => startRound(0), 700); });
     channelRef.current = ch;
