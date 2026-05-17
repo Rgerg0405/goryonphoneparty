@@ -73,6 +73,13 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
   useEffect(() => { guessesRef.current = guesses; }, [guesses]);
   useEffect(() => { scoresRef.current = scores; }, [scores]);
 
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panRef = useRef<{ dragging: boolean; sx: number; sy: number; ox: number; oy: number; moved: boolean }>({
+    dragging: false, sx: 0, sy: 0, ox: 0, oy: 0, moved: false,
+  });
+  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [round]);
+
   const usedLocsRef = useRef<Set<string>>(new Set());
 
   function pickRandomLoc(): Loc {
@@ -191,23 +198,13 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     hostStartRound(round + 1);
   }
 
-  // Map click handler: convert pixel to lat/lng (equirectangular)
-  const onMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (submitted || phase !== 'guessing') return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    const lng = x * 360 - 180;
-    const lat = 90 - y * 180;
-    setMyGuess({ lat, lng });
-    playClick();
-  };
-
-  // Google Maps Street View embed (no API key needed).
-  // The `svembed` output renders the actual Street View panorama for the given coordinates.
-  const streetViewSrc = loc
-    ? `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${Math.floor(Math.random()*360)},0,0,0&output=svembed`
-    : '';
+  // Stable per-round street view URL so the iframe doesn't re-mount on every render
+  const stableStreetViewSrc = useMemo(() => {
+    if (!loc) return '';
+    const heading = Math.floor(Math.random() * 360);
+    return `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${heading},0,0,0&output=svembed`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc?.id, round]);
 
   const sortedScores = useMemo(() => (
     players.map((p) => ({ playerId: p.player_id, username: p.username, score: scores[p.player_id] || 0 }))
