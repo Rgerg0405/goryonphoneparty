@@ -16,7 +16,7 @@ export default function Header({ musicActive = true }: HeaderProps) {
 
       {/* Music toggle */}
       <div className="absolute top-2 right-2 md:top-3 md:right-32 z-20 scale-90 md:scale-100 origin-top-right">
-        <YouTubeMusicPlayer videoId="9a6gQtlCzyY" label="Lobby zene" active={musicActive} />
+        <YouTubeMusicPlayer videoId="9a6gQtlCzyY" label="Lobby zene" active={musicActive} autoStart />
       </div>
 
       {/* YouTube link */}
