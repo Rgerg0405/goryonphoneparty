@@ -184,6 +184,8 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
             </button>
             <p className="text-[10px] text-muted-foreground mt-1">Ha be van kapcsolva, a rajzolók egy képet is feltölthetnek új rétegként.</p>
           </div>
+
+          <ModeSpecificSettings settings={settings} isHost={isHost} onUpdateSettings={onUpdateSettings} />
         </div>
       </div>
 
@@ -207,6 +209,82 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
+  settings: GameSettings; isHost: boolean; onUpdateSettings: (s: Partial<GameSettings>) => void;
+}) {
+  const mode = settings.gameMode;
+  if (mode === 'scribble') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">✍️ Scribble beállítások</div>
+        <NumberRow label="Körök" value={settings.scribbleRounds ?? 3} min={1} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ scribbleRounds: v })} />
+        <NumberRow label="Rajz idő (mp)" value={settings.scribbleDrawTime ?? 60} min={20} max={180} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ scribbleDrawTime: v })} />
+        <label className="block">
+          <span className="text-[11px] font-bold block mb-1">Saját szavak (vesszővel)</span>
+          <textarea value={settings.scribbleCustomWords ?? ''} disabled={!isHost}
+            onChange={(e) => onUpdateSettings({ scribbleCustomWords: e.target.value })}
+            className="game-input min-h-[60px] text-xs" placeholder="opcionális, pl.: zsiráf, holdfény, pizza..." />
+        </label>
+      </div>
+    );
+  }
+  if (mode === 'blind-flight') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🌑 Vakrepülés beállítások</div>
+        <NumberRow label="Körök" value={settings.blindRounds ?? 3} min={1} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ blindRounds: v })} />
+        <NumberRow label="Rajz idő (mp)" value={settings.blindDrawTime ?? 45} min={20} max={120} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ blindDrawTime: v })} />
+        <label className="block">
+          <span className="text-[11px] font-bold block mb-1">Sötétség: {Math.round((settings.blindDarkness ?? 0.85) * 100)}%</span>
+          <input type="range" min={0.4} max={1} step={0.05} value={settings.blindDarkness ?? 0.85}
+            disabled={!isHost}
+            onChange={(e) => onUpdateSettings({ blindDarkness: Number(e.target.value) })} className="w-full" />
+        </label>
+      </div>
+    );
+  }
+  if (mode === 'animation') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🎬 Animáció beállítások</div>
+        <NumberRow label="Képkockák" value={settings.animFrames ?? 6} min={2} max={12} disabled={!isHost} onChange={(v) => onUpdateSettings({ animFrames: v })} />
+        <NumberRow label="Idő / képkocka (mp)" value={settings.animFrameTime ?? 30} min={10} max={120} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ animFrameTime: v })} />
+      </div>
+    );
+  }
+  if (mode === 'presentation') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🎤 Prezentáció beállítások</div>
+        <NumberRow label="Slide-ok" value={settings.presSlides ?? 5} min={3} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ presSlides: v })} />
+        <NumberRow label="Slide idő (mp)" value={settings.presSlideTime ?? 25} min={10} max={60} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ presSlideTime: v })} />
+      </div>
+    );
+  }
+  if (mode === 'modeling-3d') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🧊 3D modell tippek</div>
+        <p className="text-[10px] text-muted-foreground">Shift+kattintás: több kijelölés. Ctrl+G csoportosít. G/R/S: mód.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+function NumberRow({ label, value, min, max, step = 1, disabled, onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; disabled?: boolean; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-bold flex-1">{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step} disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-20 px-2 py-1 text-xs rounded border-2 border-border bg-card font-bold text-right" />
     </div>
   );
 }
