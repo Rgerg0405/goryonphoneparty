@@ -22,9 +22,23 @@ const PRES_TEMPLATES = [
   'A 5 lépéses módszer',
 ];
 
+// Keyword bank used to pull random "real" photos from picsum/Unsplash
+const IMG_KEYWORDS = [
+  'technology','business','nature','space','city','people','food','animal','art','science',
+  'sport','travel','music','ocean','mountain','desert','forest','sunset','car','robot',
+  'astronaut','startup','vintage','retro','neon','minimal','abstract','architecture','sky','sunrise',
+];
+
+function pickKeyword() { return IMG_KEYWORDS[Math.floor(Math.random() * IMG_KEYWORDS.length)]; }
+function imgUrlFor(seed: string) {
+  // Picsum is free, reliable and CORS-safe.
+  // Use the seed so the same slide stays the same image across players.
+  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/1280/720`;
+}
+
 type Phase = 'intro' | 'collect' | 'pres' | 'notes' | 'recap' | 'end';
 
-type Slide = { emoji: string; template: string };
+type Slide = { emoji: string; template: string; keyword: string; img: string };
 
 export default function PresentationGameView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const slidesPerTalk = Math.max(3, Math.min(10, settings.presSlides ?? 5));
@@ -184,10 +198,16 @@ export default function PresentationGameView({ code, players, playerId, username
   }
 
   function startPresentation(idx: number, sourceTitles = titlesRef.current) {
-    const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, () => ({
-      emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
-      template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
-    }));
+    const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, (_, i) => {
+      const kw = pickKeyword();
+      const seed = `${code}-${idx}-${i}-${kw}-${Math.floor(Math.random() * 100000)}`;
+      return {
+        emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
+        template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
+        keyword: kw,
+        img: imgUrlFor(seed),
+      };
+    });
     setPresenterIdx(idx); setSlideIdx(0); setSlides(newSlides); setGauge(0); setPhase('pres');
     setSlideDeadline(Date.now() + slideTime * 1000);
     channelRef.current?.send({ type: 'broadcast', event: 'pres:start', payload: { idx, slides: newSlides, titles: sourceTitles } });
