@@ -189,7 +189,40 @@ export default function PresentationGameView({ code, players, playerId, username
       }
     });
     ch.on('broadcast', { event: 'pres:end' }, () => setPhase('recap'));
-    ch.subscribe();
+    // late-join / out-of-sync clients: ask host for current state
+    ch.on('broadcast', { event: 'state:request' }, ({ payload }) => {
+      if (!isHost) return;
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'state:sync',
+        payload: {
+          to: payload?.from,
+          phase: phaseRef.current,
+          titles: titlesRef.current,
+          slides: slidesRef.current,
+          presenterIdx: presenterIdxRef.current,
+          slideIdx: slideIdxRef.current,
+          slideDeadline: slideDeadlineRef.current,
+        },
+      });
+    });
+    ch.on('broadcast', { event: 'state:sync' }, ({ payload }) => {
+      if (payload?.to && payload.to !== playerId) return;
+      if (payload.titles) { setTitles(payload.titles); titlesRef.current = payload.titles; }
+      if (Array.isArray(payload.slides)) setSlides(payload.slides);
+      if (typeof payload.presenterIdx === 'number') setPresenterIdx(payload.presenterIdx);
+      if (typeof payload.slideIdx === 'number') setSlideIdx(payload.slideIdx);
+      if (typeof payload.slideDeadline === 'number') setSlideDeadline(payload.slideDeadline);
+      if (payload.phase) setPhase(payload.phase);
+    });
+    ch.subscribe((s) => {
+      if (s === 'SUBSCRIBED' && !isHost) {
+        // Ask host to push latest state in case we missed earlier events
+        setTimeout(() => {
+          channelRef.current?.send({ type: 'broadcast', event: 'state:request', payload: { from: playerId } });
+        }, 400);
+      }
+    });
     channelRef.current = ch;
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
