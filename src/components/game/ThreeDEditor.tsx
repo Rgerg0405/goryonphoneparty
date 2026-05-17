@@ -182,7 +182,7 @@ function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
   eraser: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
   const paintingRef = useRef(false);
 
   // Create offscreen canvas with existing texture or white
@@ -195,7 +195,7 @@ function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
     canvasRef.current = c;
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    textureRef.current = tex;
+    setTexture(tex);
     if (shape.textureUrl) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -217,7 +217,7 @@ function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    if (textureRef.current) textureRef.current.needsUpdate = true;
+    if (texture) texture.needsUpdate = true;
   };
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -258,7 +258,7 @@ function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
       onPointerLeave={onPointerUp}>
       {/* @ts-expect-error dynamic geometry tag */}
       <Geom args={geomArgs} />
-      <meshStandardMaterial map={textureRef.current ?? undefined} side={THREE.DoubleSide} />
+      <meshStandardMaterial map={texture ?? undefined} side={THREE.DoubleSide} />
     </mesh>
   );
 }
