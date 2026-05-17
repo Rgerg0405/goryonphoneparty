@@ -1,6 +1,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Player, GameSettings } from '@/lib/gameTypes';
 import { supabase } from '@/integrations/supabase/client';
 import ThreeDEditor from './ThreeDEditor';
@@ -17,82 +18,193 @@ type CarState = {
   x: number; z: number;
   angle: number;
   speed: number;
+  steerVisual: number;
   lap: number;
-  checkpoint: number; // last passed checkpoint index
+  checkpoint: number;
   finished: boolean;
-  finishTime?: number;
-  texture?: string; // car snapshot dataUrl
+  boostUntil: number;
+  // remote interpolation targets
+  tx: number; tz: number; tAngle: number;
+  snapshot?: string;
+  glb?: string;
 };
 
-const TRACK_RX = 60;
-const TRACK_RZ = 35;
-const TRACK_W = 9;
-// Checkpoints around the oval (angle in radians from center)
-const CHECKPOINT_ANGLES = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+const TRACK_RX = 70;
+const TRACK_RZ = 42;
+const TRACK_W = 10;
+const CHECKPOINTS = 8;
+const CHECKPOINT_ANGLES = Array.from({ length: CHECKPOINTS }, (_, i) => (i / CHECKPOINTS) * Math.PI * 2);
 const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#7c3aed', '#f97316', '#22d3ee', '#e11d48', '#84cc16', '#ec4899'];
 
-function trackPoint(angle: number, offset = 0) {
-  return [Math.cos(angle) * (TRACK_RX + offset), Math.sin(angle) * (TRACK_RZ + offset)];
+// Boost pads positioned along the racing line
+const BOOST_PADS = [
+  { angle: Math.PI * 0.25 },
+  { angle: Math.PI * 0.75 },
+  { angle: Math.PI * 1.25 },
+  { angle: Math.PI * 1.75 },
+];
+
+function makeAsphaltTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#2b2b2b';
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 3000; i++) {
+    const v = 30 + Math.floor(Math.random() * 60);
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+  }
+  // center dashed line
+  ctx.fillStyle = '#f1c40f';
+  for (let y = 0; y < 512; y += 32) ctx.fillRect(252, y, 8, 18);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeGrassTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#3a7a35';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4000; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? '#4a9242' : '#2c6128';
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(40, 40);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeCurbTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const ctx = c.getContext('2d')!;
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i % 2 ? '#e11d48' : '#ffffff';
+    ctx.fillRect(i * 16, 0, 16, 32);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
 }
 
 function Track() {
+  const asphalt = useMemo(makeAsphaltTexture, []);
+  const grass = useMemo(makeGrassTexture, []);
+  const curb = useMemo(makeCurbTexture, []);
+
   const points = useMemo(() => {
     const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 200; i++) {
-      const a = (i / 200) * Math.PI * 2;
-      pts.push(new THREE.Vector3(Math.cos(a) * TRACK_RX, 0.02, Math.sin(a) * TRACK_RZ));
+    for (let i = 0; i <= 240; i++) {
+      const a = (i / 240) * Math.PI * 2;
+      // Add a slight chicane wobble
+      const wob = Math.sin(a * 3) * 4;
+      pts.push(new THREE.Vector3(Math.cos(a) * (TRACK_RX + wob * 0.2), 0.02, Math.sin(a) * (TRACK_RZ + wob * 0.15)));
     }
     return pts;
   }, []);
-  const innerPts = useMemo(() => points.map((p) => {
-    const len = Math.hypot(p.x, p.z);
-    const n = TRACK_W;
-    return new THREE.Vector3(p.x * (1 - n / len), 0.02, p.z * (1 - n / len));
+
+  const inner = useMemo(() => points.map((p) => {
+    const len = Math.hypot(p.x, p.z) || 1;
+    return new THREE.Vector3(p.x * (1 - TRACK_W / len), 0.03, p.z * (1 - TRACK_W / len));
   }), [points]);
-  const outerPts = useMemo(() => points.map((p) => {
-    const len = Math.hypot(p.x, p.z);
-    const n = TRACK_W;
-    return new THREE.Vector3(p.x * (1 + n / len), 0.02, p.z * (1 + n / len));
+  const outer = useMemo(() => points.map((p) => {
+    const len = Math.hypot(p.x, p.z) || 1;
+    return new THREE.Vector3(p.x * (1 + TRACK_W / len), 0.03, p.z * (1 + TRACK_W / len));
   }), [points]);
 
-  // Build track surface as a ring of triangles
   const trackGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const verts: number[] = [];
+    const uvs: number[] = [];
     for (let i = 0; i < points.length - 1; i++) {
-      const a = innerPts[i], b = outerPts[i], c = innerPts[i + 1], d = outerPts[i + 1];
+      const a = inner[i], b = outer[i], c = inner[i + 1], d = outer[i + 1];
       verts.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
       verts.push(b.x, b.y, b.z, d.x, d.y, d.z, c.x, c.y, c.z);
+      const u0 = i / points.length * 80, u1 = (i + 1) / points.length * 80;
+      uvs.push(0, u0, 1, u0, 0, u1, 1, u0, 1, u1, 0, u1);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.computeVertexNormals();
     return geo;
-  }, [innerPts, outerPts, points]);
+  }, [inner, outer, points]);
+
+  // Curb strips on inner/outer edges
+  const buildCurb = (pts: THREE.Vector3[], outward: number) => {
+    const geo = new THREE.BufferGeometry();
+    const verts: number[] = [];
+    const uvs: number[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], c = pts[i + 1];
+      const la = Math.hypot(a.x, a.z) || 1, lc = Math.hypot(c.x, c.z) || 1;
+      const b = new THREE.Vector3(a.x * (1 + outward / la), 0.06, a.z * (1 + outward / la));
+      const d = new THREE.Vector3(c.x * (1 + outward / lc), 0.06, c.z * (1 + outward / lc));
+      verts.push(a.x, 0.05, a.z, b.x, b.y, b.z, c.x, 0.05, c.z);
+      verts.push(b.x, b.y, b.z, d.x, d.y, d.z, c.x, 0.05, c.z);
+      const u0 = i, u1 = i + 1;
+      uvs.push(0, u0, 1, u0, 0, u1, 1, u0, 1, u1, 0, u1);
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const outerCurbGeo = useMemo(() => buildCurb(outer, 1.2), [outer]);
+  const innerCurbGeo = useMemo(() => buildCurb(inner, -1.2), [inner]);
 
   return (
     <>
-      {/* Grass */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[400, 400]} />
-        <meshStandardMaterial color="#3a7a35" roughness={1} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[500, 500]} />
+        <meshStandardMaterial map={grass} roughness={1} />
       </mesh>
-      {/* Asphalt */}
-      <mesh geometry={trackGeo}>
-        <meshStandardMaterial color="#1f1f1f" side={THREE.DoubleSide} />
+      <mesh geometry={trackGeo} receiveShadow>
+        <meshStandardMaterial map={asphalt} side={THREE.DoubleSide} roughness={0.85} />
       </mesh>
-      {/* White track lines */}
-      <line>
-        <bufferGeometry attach="geometry" onUpdate={(g) => g.setFromPoints(innerPts)} />
-        <lineBasicMaterial color="#ffffff" />
-      </line>
-      <line>
-        <bufferGeometry attach="geometry" onUpdate={(g) => g.setFromPoints(outerPts)} />
-        <lineBasicMaterial color="#ffffff" />
-      </line>
-      {/* Start/finish line */}
-      <mesh position={[TRACK_RX, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[TRACK_W * 2, 1.2]} />
+      <mesh geometry={outerCurbGeo}>
+        <meshStandardMaterial map={curb} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={innerCurbGeo}>
+        <meshStandardMaterial map={curb} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Start line */}
+      <mesh position={[TRACK_RX, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[TRACK_W * 2, 1.5]} />
         <meshBasicMaterial color="#ffffff" />
+      </mesh>
+      {/* Boost pads */}
+      {BOOST_PADS.map((p, i) => {
+        const x = Math.cos(p.angle) * TRACK_RX;
+        const z = Math.sin(p.angle) * TRACK_RZ;
+        return (
+          <mesh key={i} position={[x, 0.07, z]} rotation={[-Math.PI / 2, 0, -p.angle]}>
+            <planeGeometry args={[6, TRACK_W * 1.4]} />
+            <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={0.7} transparent opacity={0.85} />
+          </mesh>
+        );
+      })}
+      {/* Decorative trees */}
+      {Array.from({ length: 30 }).map((_, i) => {
+        const a = (i / 30) * Math.PI * 2;
+        const r = TRACK_RX + 35 + (i % 3) * 6;
+        return (
+          <group key={i} position={[Math.cos(a) * r, 0, Math.sin(a) * (TRACK_RZ + 35)]}>
+            <mesh position={[0, 1, 0]}><cylinderGeometry args={[0.3, 0.4, 2]} /><meshStandardMaterial color="#5b3a1c" /></mesh>
+            <mesh position={[0, 2.5, 0]}><coneGeometry args={[1.2, 2.5, 8]} /><meshStandardMaterial color="#2c7a3a" /></mesh>
+          </group>
+        );
+      })}
+      {/* Grandstand */}
+      <mesh position={[TRACK_RX + 18, 2, 0]}>
+        <boxGeometry args={[6, 4, 30]} />
+        <meshStandardMaterial color="#94a3b8" />
       </mesh>
     </>
   );
@@ -100,38 +212,103 @@ function Track() {
 
 function CarMesh({ car, color, isMe }: { car: CarState; color: string; isMe: boolean }) {
   const ref = useRef<THREE.Group>(null);
-  const texture = useMemo(() => {
-    if (!car.texture) return null;
-    const loader = new THREE.TextureLoader();
-    return loader.load(car.texture);
-  }, [car.texture]);
-  useFrame(() => {
+  const wheelsRef = useRef<THREE.Group[]>([]);
+  const [model, setModel] = useState<THREE.Group | null>(null);
+
+  // Load GLB model from the user's 3D editor
+  useEffect(() => {
+    if (!car.glb) { setModel(null); return; }
+    const loader = new GLTFLoader();
+    loader.load(car.glb, (gltf) => {
+      const g = gltf.scene;
+      // Auto-scale to fit a ~3m car
+      const box = new THREE.Box3().setFromObject(g);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const target = 3.2;
+      const scale = target / maxDim;
+      g.scale.setScalar(scale);
+      // Re-center on ground
+      box.setFromObject(g);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      g.position.x -= center.x;
+      g.position.z -= center.z;
+      g.position.y -= box.min.y;
+      g.traverse((o: any) => { o.castShadow = true; });
+      setModel(g);
+    });
+  }, [car.glb]);
+
+  const snapshotTexture = useMemo(() => {
+    if (!car.snapshot || car.glb) return null;
+    return new THREE.TextureLoader().load(car.snapshot);
+  }, [car.snapshot, car.glb]);
+
+  useFrame((_, dt) => {
     if (!ref.current) return;
     ref.current.position.set(car.x, 0.4, car.z);
-    ref.current.rotation.y = -car.angle;
+    ref.current.rotation.y = -car.angle + Math.PI / 2;
+    // Wheel steering visual
+    wheelsRef.current.forEach((w, i) => {
+      if (!w) return;
+      if (i < 2) w.rotation.y = car.steerVisual;
+      w.rotation.x += Math.abs(car.speed) * dt * 2;
+    });
   });
+
   return (
     <group ref={ref}>
-      <mesh castShadow>
-        <boxGeometry args={[2.6, 0.7, 1.4]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {texture && (
-        <mesh position={[0, 0.41, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[2.4, 1.2]} />
-          <meshBasicMaterial map={texture} transparent />
+      {model ? (
+        <primitive object={model} />
+      ) : (
+        <>
+          {/* Fallback stylish car */}
+          <mesh position={[0, 0.25, 0]} castShadow>
+            <boxGeometry args={[1.4, 0.45, 2.8]} />
+            <meshStandardMaterial color={color} metalness={0.6} roughness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.7, -0.2]} castShadow>
+            <boxGeometry args={[1.1, 0.5, 1.2]} />
+            <meshStandardMaterial color={color} metalness={0.7} roughness={0.25} />
+          </mesh>
+          {/* spoiler */}
+          <mesh position={[0, 0.7, 1.3]}>
+            <boxGeometry args={[1.5, 0.08, 0.3]} />
+            <meshStandardMaterial color="#111" />
+          </mesh>
+          {snapshotTexture && (
+            <mesh position={[0, 0.96, -0.2]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[1.0, 1.1]} />
+              <meshBasicMaterial map={snapshotTexture} transparent />
+            </mesh>
+          )}
+        </>
+      )}
+      {/* Wheels */}
+      {[
+        { x: -0.7, z: -0.95 }, { x: 0.7, z: -0.95 },
+        { x: -0.7, z: 0.95 }, { x: 0.7, z: 0.95 },
+      ].map((p, i) => (
+        <group key={i} position={[p.x, 0.25, p.z]} ref={(el) => { if (el) wheelsRef.current[i] = el; }}>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.28, 0.28, 0.22, 16]} />
+            <meshStandardMaterial color="#0a0a0a" />
+          </mesh>
+        </group>
+      ))}
+      {/* Boost flames */}
+      {car.boostUntil > Date.now() && (
+        <mesh position={[0, 0.4, 1.5]}>
+          <coneGeometry args={[0.35, 1.4, 8]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0.8} />
         </mesh>
       )}
-      {/* wheels */}
-      {[[-1, -0.7], [1, -0.7], [-1, 0.7], [1, 0.7]].map(([x, z], i) => (
-        <mesh key={i} position={[x, -0.2, z]}>
-          <cylinderGeometry args={[0.3, 0.3, 0.3, 12]} />
-          <meshStandardMaterial color="#1a1a1a" />
-        </mesh>
-      ))}
+      {/* Player indicator */}
       {isMe && (
-        <mesh position={[0, 1.6, 0]}>
-          <coneGeometry args={[0.3, 0.6, 8]} />
+        <mesh position={[0, 2.2, 0]}>
+          <coneGeometry args={[0.35, 0.7, 8]} />
           <meshBasicMaterial color="#ffd166" />
         </mesh>
       )}
@@ -139,61 +316,116 @@ function CarMesh({ car, color, isMe }: { car: CarState; color: string; isMe: boo
   );
 }
 
-function ChaseCamera({ target }: { target: React.MutableRefObject<CarState | null> }) {
+function ChaseCamera({ target, intro }: { target: React.MutableRefObject<CarState | null>; intro: boolean }) {
   const { camera } = useThree();
-  useFrame(() => {
+  useFrame((_, dt) => {
     const me = target.current;
     if (!me) return;
-    const camDist = 8, camHeight = 4;
+    if (intro) return;
+    const camDist = 9, camHeight = 4.5;
     const tx = me.x - Math.cos(me.angle) * camDist;
     const tz = me.z + Math.sin(me.angle) * camDist;
-    camera.position.lerp(new THREE.Vector3(tx, camHeight, tz), 0.12);
-    camera.lookAt(me.x, 0.5, me.z);
+    const target3 = new THREE.Vector3(tx, camHeight, tz);
+    camera.position.lerp(target3, Math.min(1, dt * 6));
+    camera.lookAt(me.x, 0.8, me.z);
   });
   return null;
 }
 
-function RaceScene({ carsRef, playerId, colorMap, meRef }: {
+function IntroCamera({ cars, focusIdx }: { cars: CarState[]; focusIdx: number }) {
+  const { camera } = useThree();
+  useFrame(() => {
+    const c = cars[focusIdx];
+    if (!c) return;
+    const t = Date.now() / 1000;
+    const rad = 6;
+    const cx = c.x + Math.cos(t * 0.7) * rad;
+    const cz = c.z + Math.sin(t * 0.7) * rad;
+    camera.position.lerp(new THREE.Vector3(cx, 2.5, cz), 0.08);
+    camera.lookAt(c.x, 0.6, c.z);
+  });
+  return null;
+}
+
+function RaceScene({ carsRef, playerId, colorMap, meRef, phase, introIdx }: {
   carsRef: React.MutableRefObject<Map<string, CarState>>;
   playerId: string;
   colorMap: Map<string, string>;
   meRef: React.MutableRefObject<CarState | null>;
+  phase: string;
+  introIdx: number;
 }) {
   const [, force] = useState(0);
   useEffect(() => {
     const t = setInterval(() => force((v) => v + 1), 33);
     return () => clearInterval(t);
   }, []);
+  const carsArr = Array.from(carsRef.current.values());
   return (
     <>
       <color attach="background" args={['#87ceeb']} />
-      <fog attach="fog" args={['#87ceeb', 80, 300]} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[40, 60, 20]} intensity={1.1} castShadow />
+      <fog attach="fog" args={['#87ceeb', 80, 320]} />
+      <ambientLight intensity={0.75} />
+      <directionalLight position={[40, 60, 20]} intensity={1.3} castShadow shadow-mapSize={[1024, 1024]} />
       <Track />
-      {Array.from(carsRef.current.values()).map((c) => (
+      {carsArr.map((c) => (
         <CarMesh key={c.pid} car={c} color={colorMap.get(c.pid) || '#fff'} isMe={c.pid === playerId} />
       ))}
-      <ChaseCamera target={meRef} />
+      {phase === 'intro' ? <IntroCamera cars={carsArr} focusIdx={introIdx} /> : <ChaseCamera target={meRef} intro={false} />}
     </>
   );
+}
+
+// === Engine audio ===
+function useEngineAudio(active: boolean, speedRef: React.MutableRefObject<number>, boostRef: React.MutableRefObject<boolean>) {
+  useEffect(() => {
+    if (!active) return;
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    osc.type = 'sawtooth'; osc2.type = 'square';
+    const gain = ctx.createGain();
+    gain.gain.value = 0.04;
+    osc.connect(gain); osc2.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(); osc2.start();
+    let raf = 0;
+    const tick = () => {
+      const s = Math.abs(speedRef.current);
+      const freq = 70 + s * 12 + (boostRef.current ? 60 : 0);
+      osc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.04);
+      osc2.frequency.setTargetAtTime(freq * 1.5, ctx.currentTime, 0.04);
+      gain.gain.setTargetAtTime(0.02 + Math.min(0.06, s * 0.005), ctx.currentTime, 0.05);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      try { osc.stop(); osc2.stop(); ctx.close(); } catch {}
+    };
+  }, [active, speedRef, boostRef]);
 }
 
 export default function F1RaceView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const totalLaps = Math.max(1, settings.f1Laps ?? 3);
   const designTime = Math.max(30, settings.f1DesignTime ?? 90);
-  const [phase, setPhase] = useState<'design' | 'countdown' | 'race' | 'end'>('design');
+  const [phase, setPhase] = useState<'design' | 'intro' | 'countdown' | 'race' | 'end'>('design');
   const [designLeft, setDesignLeft] = useState(designTime);
   const [countdown, setCountdown] = useState(3);
   const [myTexture, setMyTexture] = useState<string | null>(null);
   const [submittedSet, setSubmittedSet] = useState<Set<string>>(new Set());
   const [finishers, setFinishers] = useState<{ pid: string; username: string; time: number }[]>([]);
+  const [introIdx, setIntroIdx] = useState(0);
   const carsRef = useRef<Map<string, CarState>>(new Map());
   const meRef = useRef<CarState | null>(null);
   const channelRef = useRef<any>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const lastBcRef = useRef(0);
   const raceStartRef = useRef(0);
+  const speedRef = useRef(0);
+  const boostRef = useRef(false);
 
   const colorMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -201,17 +433,17 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     return m;
   }, [players]);
 
-  // Init cars at grid (line of starting positions on straight after start line)
   useEffect(() => {
     players.forEach((p, i) => {
       const row = Math.floor(i / 2);
       const col = i % 2;
-      const x = TRACK_RX + (col === 0 ? -1.5 : 1.5);
-      const z = -2 - row * 3.5;
+      const x = TRACK_RX + (col === 0 ? -2 : 2);
+      const z = -3 - row * 4;
       const car: CarState = {
         pid: p.player_id, username: p.username,
-        x, z, angle: Math.PI / 2, speed: 0,
-        lap: 0, checkpoint: -1, finished: false,
+        x, z, angle: Math.PI / 2, speed: 0, steerVisual: 0,
+        lap: 0, checkpoint: -1, finished: false, boostUntil: 0,
+        tx: x, tz: z, tAngle: Math.PI / 2,
       };
       carsRef.current.set(p.player_id, car);
       if (p.player_id === playerId) meRef.current = car;
@@ -224,10 +456,14 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     const ch = supabase.channel(`f1-${code}`);
     ch.on('broadcast', { event: 'f1:design' }, ({ payload }) => {
       const car = carsRef.current.get(payload.pid);
-      if (car) car.texture = payload.texture;
+      if (car) { car.snapshot = payload.snapshot; car.glb = payload.glb; }
       setSubmittedSet((s) => new Set(s).add(payload.pid));
     });
-    ch.on('broadcast', { event: 'f1:start' }, ({ payload }) => {
+    ch.on('broadcast', { event: 'f1:intro' }, ({ payload }) => {
+      raceStartRef.current = payload.startAt;
+      setPhase('intro');
+    });
+    ch.on('broadcast', { event: 'f1:countdown' }, ({ payload }) => {
       raceStartRef.current = payload.startAt;
       setPhase('countdown');
     });
@@ -235,8 +471,9 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
       if (payload.pid === playerId) return;
       const c = carsRef.current.get(payload.pid);
       if (c) {
-        c.x = payload.x; c.z = payload.z; c.angle = payload.angle;
+        c.tx = payload.x; c.tz = payload.z; c.tAngle = payload.angle;
         c.lap = payload.lap; c.finished = payload.finished;
+        c.speed = payload.speed ?? c.speed;
       }
     });
     ch.on('broadcast', { event: 'f1:finish' }, ({ payload }) => {
@@ -247,6 +484,14 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     });
     ch.subscribe();
     channelRef.current = ch;
+    // Sync: when a new player joins they ask for designs
+    ch.on('broadcast', { event: 'f1:request-designs' }, () => {
+      const me = carsRef.current.get(playerId);
+      if (me?.snapshot) {
+        channelRef.current?.send({ type: 'broadcast', event: 'f1:design',
+          payload: { pid: playerId, snapshot: me.snapshot, glb: me.glb } });
+      }
+    });
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
@@ -262,15 +507,38 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
       if (left <= 0 || allSubmitted) {
         clearInterval(t);
         if (isHost) {
-          const startAt = Date.now() + 4000;
-          channelRef.current?.send({ type: 'broadcast', event: 'f1:start', payload: { startAt } });
+          const startAt = Date.now() + players.length * 2200 + 1000;
+          channelRef.current?.send({ type: 'broadcast', event: 'f1:intro', payload: { startAt } });
           raceStartRef.current = startAt;
-          setPhase('countdown');
+          setPhase('intro');
         }
       }
     }, 300);
     return () => clearInterval(t);
   }, [phase, designTime, players, submittedSet, isHost]);
+
+  // Intro phase: rotate through each car
+  useEffect(() => {
+    if (phase !== 'intro') return;
+    setIntroIdx(0);
+    const per = 2200;
+    const t = setInterval(() => {
+      setIntroIdx((i) => {
+        if (i + 1 >= players.length) {
+          clearInterval(t);
+          if (isHost) {
+            const startAt = Date.now() + 4000;
+            channelRef.current?.send({ type: 'broadcast', event: 'f1:countdown', payload: { startAt } });
+            raceStartRef.current = startAt;
+            setPhase('countdown');
+          }
+          return i;
+        }
+        return i + 1;
+      });
+    }, per);
+    return () => clearInterval(t);
+  }, [phase, players.length, isHost]);
 
   // Countdown
   useEffect(() => {
@@ -296,43 +564,58 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
   }, []);
 
-  // Physics loop
+  // Physics + interpolation loop
   useEffect(() => {
-    if (phase !== 'race') return;
+    if (phase !== 'race' && phase !== 'intro' && phase !== 'countdown') return;
     let raf = 0;
     let last = performance.now();
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const me = meRef.current;
-      if (me && !me.finished) {
+      if (me && !me.finished && phase === 'race') {
         const keys = keysRef.current;
-        const accel = (keys.has('w') || keys.has('arrowup')) ? 18 : 0;
-        const brake = (keys.has('s') || keys.has('arrowdown')) ? 22 : 0;
+        const accel = (keys.has('w') || keys.has('arrowup')) ? 26 : 0;
+        const brake = (keys.has('s') || keys.has('arrowdown')) ? 32 : 0;
         const steerL = (keys.has('a') || keys.has('arrowleft')) ? 1 : 0;
         const steerR = (keys.has('d') || keys.has('arrowright')) ? 1 : 0;
-        // accel
-        me.speed += accel * dt;
+        const boosting = me.boostUntil > Date.now();
+        boostRef.current = boosting;
+        const topSpeed = boosting ? 52 : 36;
+        me.speed += accel * dt * (boosting ? 1.6 : 1);
         me.speed -= brake * dt * (me.speed > 0 ? 1 : -0.4);
-        // drag
-        me.speed *= 0.985;
-        me.speed = Math.max(-12, Math.min(34, me.speed));
-        // steering (proportional to speed)
-        const steer = (steerL - steerR) * 2.0 * (Math.min(1, Math.abs(me.speed) / 6));
-        me.angle += steer * dt;
-        // off track penalty
-        const dist = Math.hypot(me.x / TRACK_RX, me.z / TRACK_RZ);
-        const onTrack = dist > 1 - TRACK_W / Math.min(TRACK_RX, TRACK_RZ) && dist < 1 + TRACK_W / Math.min(TRACK_RX, TRACK_RZ);
-        if (!onTrack) me.speed *= 0.92;
-        // move
+        me.speed *= 0.99;
+        me.speed = Math.max(-15, Math.min(topSpeed, me.speed));
+        // Smooth steering
+        const targetSteer = (steerL - steerR) * 1.0;
+        me.steerVisual += (targetSteer * 0.5 - me.steerVisual) * Math.min(1, dt * 8);
+        const steerStrength = me.steerVisual * 2.4 * Math.min(1, Math.abs(me.speed) / 8);
+        me.angle += steerStrength * dt;
+        // Off-track penalty using elliptical distance
+        const distRatio = Math.hypot(me.x / TRACK_RX, me.z / TRACK_RZ);
+        const inner = 1 - TRACK_W / Math.min(TRACK_RX, TRACK_RZ);
+        const outer = 1 + TRACK_W / Math.min(TRACK_RX, TRACK_RZ);
+        const onTrack = distRatio > inner && distRatio < outer;
+        if (!onTrack) me.speed *= 0.93;
         me.x += Math.cos(me.angle) * me.speed * dt;
         me.z -= Math.sin(me.angle) * me.speed * dt;
-        // checkpoints: angle around center
+        speedRef.current = me.speed;
+        // Boost pad detection
+        BOOST_PADS.forEach((p) => {
+          const px = Math.cos(p.angle) * TRACK_RX;
+          const pz = Math.sin(p.angle) * TRACK_RZ;
+          if (Math.hypot(me.x - px, me.z - pz) < 4 && me.boostUntil < Date.now() - 500) {
+            me.boostUntil = Date.now() + 1800;
+            me.speed = Math.max(me.speed, 38);
+            playPop();
+          }
+        });
+        // Checkpoints
         const carAngle = Math.atan2(me.z, me.x);
         const norm = (carAngle + Math.PI * 2) % (Math.PI * 2);
         const nextCp = (me.checkpoint + 1) % CHECKPOINT_ANGLES.length;
         const cpAngle = CHECKPOINT_ANGLES[nextCp];
-        if (Math.abs(((norm - cpAngle + Math.PI) % (Math.PI * 2)) - Math.PI) < 0.25) {
+        if (Math.abs(((norm - cpAngle + Math.PI) % (Math.PI * 2)) - Math.PI) < 0.35) {
           me.checkpoint = nextCp;
           if (nextCp === 0) {
             me.lap += 1;
@@ -347,15 +630,26 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
             }
           }
         }
-        // broadcast
-        if (now - lastBcRef.current > 80) {
+        if (now - lastBcRef.current > 60) {
           lastBcRef.current = now;
           channelRef.current?.send({
             type: 'broadcast', event: 'f1:car',
-            payload: { pid: playerId, x: me.x, z: me.z, angle: me.angle, lap: me.lap, finished: me.finished },
+            payload: { pid: playerId, x: me.x, z: me.z, angle: me.angle, lap: me.lap, finished: me.finished, speed: me.speed },
           });
         }
       }
+      // Interpolate remote cars smoothly
+      carsRef.current.forEach((c) => {
+        if (c.pid === playerId) return;
+        const a = Math.min(1, dt * 10);
+        c.x += (c.tx - c.x) * a;
+        c.z += (c.tz - c.z) * a;
+        // angle wrap
+        let da = c.tAngle - c.angle;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        c.angle += da * a;
+      });
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -363,19 +657,22 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  // Engine audio active only during race
+  useEngineAudio(phase === 'race', speedRef, boostRef);
+
   // End check
   useEffect(() => {
-    if (phase === 'race' && finishers.length >= Math.min(players.length, totalLaps > 0 ? players.length : 1)) {
+    if (phase === 'race' && finishers.length >= players.length) {
       setTimeout(() => setPhase('end'), 1500);
     }
-  }, [finishers, phase, players.length, totalLaps]);
+  }, [finishers, phase, players.length]);
 
-  const submitDesign = (dataUrl: string) => {
-    setMyTexture(dataUrl);
+  const submitDesign = (snapshot: string, glb?: string) => {
+    setMyTexture(snapshot);
     const car = carsRef.current.get(playerId);
-    if (car) car.texture = dataUrl;
+    if (car) { car.snapshot = snapshot; car.glb = glb; }
     setSubmittedSet((s) => new Set(s).add(playerId));
-    channelRef.current?.send({ type: 'broadcast', event: 'f1:design', payload: { pid: playerId, texture: dataUrl } });
+    channelRef.current?.send({ type: 'broadcast', event: 'f1:design', payload: { pid: playerId, snapshot, glb } });
     playSubmit();
   };
 
@@ -384,9 +681,7 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
       <div className="max-w-7xl mx-auto p-4 space-y-3">
         <div className="game-card p-3 flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-xl font-bold">🏎️ Tervezd meg az autód! ({designLeft}mp)</h2>
-          <div className="text-sm font-bold">
-            Kész: {submittedSet.size}/{players.length}
-          </div>
+          <div className="text-sm font-bold">Kész: {submittedSet.size}/{players.length}</div>
         </div>
         {myTexture ? (
           <div className="game-card p-4 text-center space-y-3">
@@ -401,7 +696,10 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
             </div>
           </div>
         ) : (
-          <ThreeDEditor onSubmit={submitDesign} />
+          <ThreeDEditor
+            onSubmit={(d) => submitDesign(d)}
+            onSubmitWithModel={({ snapshot, glb }) => submitDesign(snapshot, glb)}
+          />
         )}
       </div>
     );
@@ -434,31 +732,48 @@ export default function F1RaceView({ code, players, playerId, username, isHost, 
     );
   }
 
+  const introCar = phase === 'intro' ? Array.from(carsRef.current.values())[introIdx] : null;
+
   return (
     <div className="fixed inset-0 bg-black">
       <Canvas shadows camera={{ fov: 70, position: [TRACK_RX, 8, -10] }}>
-        <RaceScene carsRef={carsRef} playerId={playerId} colorMap={colorMap} meRef={meRef} />
+        <RaceScene carsRef={carsRef} playerId={playerId} colorMap={colorMap} meRef={meRef} phase={phase} introIdx={introIdx} />
       </Canvas>
-      {/* HUD */}
-      <div className="absolute top-4 left-4 game-card p-3 text-sm font-bold pointer-events-none">
-        <div>🏁 Kör: {(meRef.current?.lap ?? 0) + 1}/{totalLaps}</div>
-        <div>💨 {Math.abs(Math.round((meRef.current?.speed ?? 0) * 8))} km/h</div>
-      </div>
-      <div className="absolute top-4 right-4 game-card p-3 text-xs font-bold pointer-events-none max-w-[200px]">
-        <div className="mb-1">🏆 Ranglista</div>
-        {Array.from(carsRef.current.values()).sort((a, b) => (b.lap - a.lap) || (a.pid === playerId ? -1 : 1)).map((c) => (
-          <div key={c.pid} className="flex justify-between">
-            <span>{c.username}</span>
-            <span>{c.finished ? '🏁' : `L${c.lap + 1}`}</span>
+      {phase === 'intro' && introCar && (
+        <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 pointer-events-none">
+          <div className="game-card px-8 py-4 text-center animate-zoom-in">
+            <div className="text-sm uppercase tracking-widest opacity-70">Versenyző bemutatása</div>
+            <div className="text-5xl font-bold mt-1">{introCar.username}</div>
+            <div className="text-xs mt-1 opacity-70">#{introIdx + 1} / {players.length}</div>
           </div>
-        ))}
-      </div>
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 game-card p-2 text-xs font-bold pointer-events-none">
-        WASD / nyilak vezetés
-      </div>
+        </div>
+      )}
+      {phase !== 'intro' && (
+        <>
+          <div className="absolute top-4 left-4 game-card p-3 text-sm font-bold pointer-events-none">
+            <div>🏁 Kör: {Math.min(totalLaps, (meRef.current?.lap ?? 0) + 1)}/{totalLaps}</div>
+            <div>💨 {Math.abs(Math.round((meRef.current?.speed ?? 0) * 8))} km/h</div>
+            {meRef.current && meRef.current.boostUntil > Date.now() && (
+              <div className="text-cyan-400">⚡ BOOST!</div>
+            )}
+          </div>
+          <div className="absolute top-4 right-4 game-card p-3 text-xs font-bold pointer-events-none max-w-[200px]">
+            <div className="mb-1">🏆 Ranglista</div>
+            {Array.from(carsRef.current.values()).sort((a, b) => (b.lap - a.lap) || (a.pid === playerId ? -1 : 1)).map((c) => (
+              <div key={c.pid} className="flex justify-between">
+                <span>{c.username}</span>
+                <span>{c.finished ? '🏁' : `L${c.lap + 1}`}</span>
+              </div>
+            ))}
+          </div>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 game-card p-2 text-xs font-bold pointer-events-none">
+            WASD / nyilak vezetés · ⚡ cián padokon boost
+          </div>
+        </>
+      )}
       {phase === 'countdown' && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
-          <div className="text-9xl font-bold text-primary">{countdown > 0 ? countdown : 'GO!'}</div>
+          <div className="text-9xl font-bold text-primary animate-zoom-in">{countdown > 0 ? countdown : 'GO!'}</div>
         </div>
       )}
     </div>
