@@ -470,10 +470,11 @@ function PaintModal({ shape, onClose, onSave }: {
 
 interface Props {
   onSubmit: (dataUrl: string) => void;
+  onSubmitWithModel?: (data: { snapshot: string; glb: string }) => void;
   disabled?: boolean;
 }
 
-export default function ThreeDEditor({ onSubmit, disabled }: Props) {
+export default function ThreeDEditor({ onSubmit, onSubmitWithModel, disabled }: Props) {
   const [shapes, setShapes] = useState<ShapeItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>('translate');
@@ -687,7 +688,25 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
     if (!glRef.current || !sceneRef.current || !cameraRef.current) return;
     glRef.current.render(sceneRef.current, cameraRef.current as THREE.Camera);
     const dataUrl = glRef.current.domElement.toDataURL('image/jpeg', 0.92);
-    onSubmit(dataUrl);
+    if (onSubmitWithModel) {
+      const group = new THREE.Group();
+      meshRefsRef.current.forEach((m) => group.add(m.clone(true)));
+      const exporter = new GLTFExporter();
+      exporter.parse(group, (result) => {
+        const buf = result instanceof ArrayBuffer
+          ? result
+          : new TextEncoder().encode(JSON.stringify(result)).buffer;
+        // base64 encode
+        const bytes = new Uint8Array(buf);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        const b64 = btoa(bin);
+        const glb = `data:model/gltf-binary;base64,${b64}`;
+        onSubmitWithModel({ snapshot: dataUrl, glb });
+      }, () => onSubmit(dataUrl), { binary: true });
+    } else {
+      onSubmit(dataUrl);
+    }
   };
 
   const exportGLB = () => {
