@@ -66,7 +66,19 @@ function ShapeMesh({
     return () => registerRef(shape.id, null);
   });
 
-  const texture = useMemo(() => (shape.textureUrl ? makeTextureFromImage(shape.textureUrl) : null), [shape.textureUrl]);
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    if (!shape.textureUrl) { setTexture(null); return; }
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(shape.textureUrl, (loaded) => {
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      loaded.needsUpdate = true;
+      setTexture(loaded);
+    });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    setTexture(tex);
+    return () => { tex.dispose(); };
+  }, [shape.textureUrl]);
 
   // Use onClick (pointerup with no drag) instead of onPointerDown so that
   // dragging the TransformControls gizmo over a background mesh does NOT
@@ -75,7 +87,7 @@ function ShapeMesh({
     if (draggingRef.current) return;
     e.stopPropagation();
     const native = e.nativeEvent as MouseEvent;
-    onPick(native.shiftKey);
+    onPick(native.shiftKey || native.ctrlKey || native.metaKey);
   };
   // Note: raycast disabling during drag is handled centrally via draggingRef;
   // onClick won't fire if the gizmo absorbed the drag.
