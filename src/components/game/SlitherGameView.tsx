@@ -389,7 +389,7 @@ export default function SlitherGameView({ code, players, playerId, username, isH
           <div className="ios-glass rounded-2xl px-6 py-4 text-center">
             <div className="text-5xl">💀</div>
             <div className="font-bold mt-2">Meghaltál!</div>
-            <div className="text-xs text-muted-foreground">Várd ki a kör végét</div>
+            <div className="text-xs text-muted-foreground">3mp múlva újraéledsz...</div>
           </div>
         </div>
       )}
