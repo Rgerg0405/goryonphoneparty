@@ -17,6 +17,10 @@ function maskWord(w: string) {
   return w.split('').map((c) => (c === ' ' ? ' ' : '_')).join('');
 }
 
+function mergeScores(current: Record<string, number>, pid: string, points: number) {
+  return { ...current, [pid]: Math.max(current[pid] || 0, (current[pid] || 0) + points) };
+}
+
 export default function ScribbleGameView({ code, players, playerId, username, isHost, settings, onFinish }: Props) {
   const rounds = settings.scribbleRounds ?? 3;
   const drawTime = settings.scribbleDrawTime ?? 60;
@@ -62,6 +66,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     setRound(r);
     setRevealed(maskWord(r.word));
     setLiveDrawing(null);
+    solvedRef.current = new Set();
     setSolved(new Set());
     setMessages([]);
     setPhase('play');
@@ -70,8 +75,10 @@ export default function ScribbleGameView({ code, players, playerId, username, is
 
   function scheduleNext(nextIdx: number) {
     setTimeout(() => {
-      if (nextIdx >= totalRounds) setPhase('end');
-      else if (isHost) startRound(nextIdx);
+      if (nextIdx >= totalRounds) {
+        setPhase('end');
+        channelRef.current?.send({ type: 'broadcast', event: 'game:end', payload: { scores: scoresRef.current } });
+      } else if (isHost) startRound(nextIdx);
     }, 3500);
   }
 
@@ -101,8 +108,9 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     ch.on('broadcast', { event: 'guess' }, ({ payload }) => {
       setMessages((m) => [...m, payload].slice(-80));
       if (payload.correct) {
-        setSolved((s) => new Set([...Array.from(s), payload.pid]));
-        setScores((sc) => ({ ...sc, [payload.pid]: (sc[payload.pid] || 0) + (payload.points || 0) }));
+        solvedRef.current = new Set([...Array.from(solvedRef.current), payload.pid]);
+        setSolved(new Set(solvedRef.current));
+        setScores((sc) => mergeScores(sc, payload.pid, payload.points || 0));
         playPop();
         // host: end early if everyone (except drawer) solved
         if (isHost) {
@@ -126,6 +134,10 @@ export default function ScribbleGameView({ code, players, playerId, username, is
       setPhase('reveal');
       setScores(payload.scores || {});
       scheduleNext(payload.nextIdx);
+    });
+    ch.on('broadcast', { event: 'game:end' }, ({ payload }) => {
+      setScores(payload.scores || scoresRef.current);
+      setPhase('end');
     });
     ch.subscribe((status) => {
       if (status === 'SUBSCRIBED' && isHost) {
@@ -193,8 +205,9 @@ export default function ScribbleGameView({ code, players, playerId, username, is
     channelRef.current?.send({ type: 'broadcast', event: 'guess', payload });
     setMessages((m) => [...m, payload].slice(-80));
     if (ok) {
-      setSolved((s) => new Set([...Array.from(s), playerId]));
-      setScores((sc) => ({ ...sc, [playerId]: (sc[playerId] || 0) + points }));
+      solvedRef.current = new Set([...Array.from(solvedRef.current), playerId]);
+      setSolved(new Set(solvedRef.current));
+      setScores((sc) => mergeScores(sc, playerId, points));
       playPop();
       if (isHost) {
         setTimeout(() => {
@@ -235,9 +248,9 @@ export default function ScribbleGameView({ code, players, playerId, username, is
   const drawer = players.find((p) => p.player_id === currentDrawerId);
 
   return (
-    <div className="max-w-[1500px] mx-auto p-2 grid lg:grid-cols-[minmax(0,1fr)_320px] gap-3">
+    <div className="max-w-[1500px] mx-auto p-2 md:p-3 grid xl:grid-cols-[minmax(0,1fr)_340px] gap-3">
       <div className="space-y-2">
-        <div className="game-card py-2 px-4 flex items-center justify-between gap-3">
+        <div className="game-card py-2 px-3 md:px-4 grid grid-cols-3 items-center gap-2 text-center">
           <div className="font-bold text-sm">Kör {roundIdx + 1}/{totalRounds}</div>
           <div className="font-bold text-sm">✏️ {drawer?.username || '...'}</div>
           <div className={`font-bold text-xl ${timeLeft <= 10 ? 'text-destructive animate-pulse' : ''}`}>⏱️ {timeLeft}mp</div>
@@ -249,7 +262,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
               <p className="text-xs text-muted-foreground">A te szavad:</p>
               <p className="text-3xl font-bold">{round.word}</p>
             </div>
-            <DrawingCanvas onSubmit={() => {}} hideSubmit onChange={handleLiveDraw} />
+            <DrawingCanvas onSubmit={() => {}} hideSubmit onChange={handleLiveDraw} compact />
           </>
         )}
 
@@ -257,7 +270,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
           <>
             <div className="game-card text-center py-3">
               <p className="text-xs text-muted-foreground">A szó:</p>
-              <p className="text-3xl font-mono font-bold tracking-[0.4em]">{revealed || '_ _ _'}</p>
+              <p className="text-2xl md:text-3xl font-mono font-bold tracking-[0.18em] md:tracking-[0.4em] break-words">{revealed || '_ _ _'}</p>
             </div>
             <div className="game-card p-2">
               <div className="rounded-xl overflow-hidden bg-white" style={{ aspectRatio: '16/10' }}>
@@ -280,7 +293,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
         )}
       </div>
 
-      <div className="game-card flex flex-col h-[75vh]">
+      <div className="game-card flex flex-col h-[55vh] xl:h-[75vh] min-h-[360px]">
         <div className="font-bold text-sm mb-2">💬 Tippek</div>
         <div className="flex-1 overflow-y-auto space-y-1 text-sm">
           {messages.map((m) => (
@@ -290,7 +303,7 @@ export default function ScribbleGameView({ code, players, playerId, username, is
           ))}
         </div>
         {!isDrawer && phase === 'play' && !solved.has(playerId) && (
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-2 sticky bottom-0 bg-card pt-2">
             <input value={guess} onChange={(e) => setGuess(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submitGuess()}
               className="game-input flex-1" placeholder="Tipp..." autoFocus />
