@@ -178,12 +178,13 @@ function SceneContent({
 }
 
 // ===== 3D Paint modal — paint directly on the selected mesh =====
-function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
+function PaintableMesh({ shape, canvasRef, color, size, eraser, enabled = true }: {
   shape: ShapeItem;
   canvasRef: React.MutableRefObject<HTMLCanvasElement | null>;
   color: string;
   size: number;
   eraser: boolean;
+  enabled?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
@@ -225,12 +226,12 @@ function PaintableMesh({ shape, canvasRef, color, size, eraser }: {
   };
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !enabled) return;
     paintingRef.current = true;
     if (e.uv) paintAt(e.uv.clone());
   };
   const onPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!paintingRef.current) return;
+    if (!paintingRef.current || !enabled) return;
     if (e.uv) paintAt(e.uv.clone());
   };
   const onPointerUp = () => { paintingRef.current = false; };
