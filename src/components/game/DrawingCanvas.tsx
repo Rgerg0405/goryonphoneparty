@@ -669,6 +669,160 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     playClick();
   };
 
+  // ===== Overlay helpers (movable/resizable text + media) =====
+  const addOverlay = (ov: Overlay) => {
+    setOverlays((s) => [...s, ov]);
+    setSelectedOverlayId(ov.id);
+  };
+
+  const updateOverlay = (id: string, patch: Partial<Overlay>) => {
+    setOverlays((s) => s.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+  };
+
+  const deleteOverlay = (id: string) => {
+    setOverlays((s) => s.filter((o) => o.id !== id));
+    if (selectedOverlayId === id) setSelectedOverlayId(null);
+  };
+
+  const addTextOverlay = () => {
+    addOverlay({
+      id: crypto.randomUUID(),
+      kind: 'text',
+      x: CANVAS_W / 2 - 200, y: CANVAS_H / 2 - 40, w: 400, h: 80, rot: 0,
+      text: 'Szöveg', fontSize: 64, color, font: 'Impact, sans-serif',
+    });
+    playClick();
+  };
+
+  const addImageOverlayFromFile = async (file: File) => {
+    const url = await new Promise<string>((res) => {
+      const r = new FileReader(); r.onload = (e) => res(e.target?.result as string); r.readAsDataURL(file);
+    });
+    if (file.type === 'image/gif') {
+      // decode all frames using ImageDecoder if available, fallback to single frame
+      try {
+        const buf = await (await fetch(url)).arrayBuffer();
+        // @ts-expect-error experimental
+        const dec = new ImageDecoder({ data: buf, type: 'image/gif' });
+        await dec.tracks.ready;
+        const track = dec.tracks.selectedTrack;
+        const total = track?.frameCount || 1;
+        const frames: ImageBitmap[] = [];
+        const delays: number[] = [];
+        for (let i = 0; i < total; i++) {
+          const f = await dec.decode({ frameIndex: i });
+          const bmp = await createImageBitmap(f.image);
+          frames.push(bmp);
+          delays.push((f.image.duration ? f.image.duration / 1000 : 100));
+        }
+        const w = frames[0].width; const h = frames[0].height;
+        const scale = Math.min(CANVAS_W * 0.5 / w, CANVAS_H * 0.5 / h, 1);
+        addOverlay({
+          id: crypto.randomUUID(), kind: 'image',
+          x: CANVAS_W / 2 - (w * scale) / 2, y: CANVAS_H / 2 - (h * scale) / 2,
+          w: w * scale, h: h * scale, rot: 0,
+          gifFrames: frames, gifDelays: delays, src: url,
+        });
+        return;
+      } catch (e) {
+        // fallback to static image
+      }
+    }
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(CANVAS_W * 0.5 / img.width, CANVAS_H * 0.5 / img.height, 1);
+      const w = img.width * scale; const h = img.height * scale;
+      const ov: Overlay = {
+        id: crypto.randomUUID(), kind: 'image',
+        x: CANVAS_W / 2 - w / 2, y: CANVAS_H / 2 - h / 2, w, h, rot: 0,
+        src: url, _img: img,
+      };
+      addOverlay(ov);
+    };
+    img.src = url;
+  };
+
+  const addVideoOverlayFromFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.src = url; v.loop = true; v.muted = true; v.playsInline = true; v.crossOrigin = 'anonymous';
+    v.onloadeddata = () => {
+      const w = v.videoWidth || 480; const h = v.videoHeight || 270;
+      const scale = Math.min(CANVAS_W * 0.5 / w, CANVAS_H * 0.5 / h, 1);
+      v.play().catch(() => {});
+      addOverlay({
+        id: crypto.randomUUID(), kind: 'video',
+        x: CANVAS_W / 2 - (w * scale) / 2, y: CANVAS_H / 2 - (h * scale) / 2,
+        w: w * scale, h: h * scale, rot: 0,
+        src: url, _video: v,
+      });
+    };
+  };
+
+  // pointer hit-test for overlays (returns top-most hit)
+  const hitOverlay = (p: Point): Overlay | null => {
+    for (let i = overlays.length - 1; i >= 0; i--) {
+      const o = overlays[i];
+      // rough AABB ignoring rotation for picking; good enough
+      if (p.x >= o.x && p.x <= o.x + o.w && p.y >= o.y && p.y <= o.y + o.h) return o;
+    }
+    return null;
+  };
+
+  // Overlay drag/handle interaction state
+  const overlayDragRef = useRef<{ id: string; mode: 'move' | 'scale' | 'rotate'; start: Point; orig: Overlay } | null>(null);
+
+  const startOverlayInteraction = (e: React.MouseEvent | React.TouchEvent, id: string, mode: 'move' | 'scale' | 'rotate') => {
+    e.stopPropagation();
+    e.preventDefault();
+    const orig = overlays.find((o) => o.id === id);
+    if (!orig) return;
+    overlayDragRef.current = { id, mode, start: getPos(e), orig: { ...orig } };
+    setSelectedOverlayId(id);
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const ref = overlayDragRef.current; if (!ref) return;
+      const point = getPosFromNative(ev);
+      const dx = point.x - ref.start.x;
+      const dy = point.y - ref.start.y;
+      if (ref.mode === 'move') {
+        updateOverlay(ref.id, { x: ref.orig.x + dx, y: ref.orig.y + dy });
+      } else if (ref.mode === 'scale') {
+        const newW = Math.max(20, ref.orig.w + dx);
+        const newH = Math.max(20, ref.orig.h + dy);
+        updateOverlay(ref.id, { w: newW, h: newH });
+      } else if (ref.mode === 'rotate') {
+        const cx = ref.orig.x + ref.orig.w / 2;
+        const cy = ref.orig.y + ref.orig.h / 2;
+        const ang = Math.atan2(point.y - cy, point.x - cx);
+        updateOverlay(ref.id, { rot: ang + Math.PI / 2 });
+      }
+    };
+    const onUp = () => {
+      overlayDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove as any);
+      window.removeEventListener('touchend', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove as any, { passive: false });
+    window.addEventListener('touchend', onUp);
+  };
+
+  const getPosFromNative = (e: MouseEvent | TouchEvent): Point => {
+    const canvas = composedRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CANVAS_W / rect.width;
+    const scaleY = CANVAS_H / rect.height;
+    if ('touches' in e && e.touches.length > 0) {
+      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+    }
+    const m = e as MouseEvent;
+    return { x: (m.clientX - rect.left) * scaleX, y: (m.clientY - rect.top) * scaleY };
+  };
+
   // ===== input handlers =====
   const SHAPE_TOOLS: Tool[] = ['line', 'rect', 'circle', 'triangle', 'star', 'arrow', 'polygon'];
 
@@ -676,6 +830,15 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
     if (disabled) return;
     e.preventDefault();
     const pos = getPos(e);
+
+    // If we click on an overlay, drag it instead of painting
+    const hit = hitOverlay(pos);
+    if (hit) {
+      startOverlayInteraction(e, hit.id, 'move');
+      return;
+    } else if (selectedOverlayId) {
+      setSelectedOverlayId(null);
+    }
 
     if (tool === 'fill') {
       saveState();
