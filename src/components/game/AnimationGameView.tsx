@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Player, GameSettings } from '@/lib/gameTypes';
 import DrawingCanvas from './DrawingCanvas';
-import { playClick, playNotification } from '@/lib/sounds';
+import { playClick, playNotification, playWhoosh, playApplause } from '@/lib/sounds';
 
 interface Props {
   code: string; players: Player[]; playerId: string; username: string;
@@ -109,8 +109,8 @@ export default function AnimationGameView({ code, players, playerId, username, i
 
   if (phase === 'end') {
     return (
-      <div className="max-w-2xl mx-auto p-4 space-y-3">
-        <h2 className="text-3xl font-bold text-center">🎬 Animáció vége!</h2>
+      <div className="max-w-2xl mx-auto p-4 space-y-3 animate-zoom-in">
+        <h2 className="text-3xl font-bold text-center animate-spring-in">🎬 Animáció vége!</h2>
         {isHost && <button className="game-btn-primary w-full" onClick={onFinish}>Vissza a lobbyba</button>}
       </div>
     );
@@ -124,10 +124,16 @@ export default function AnimationGameView({ code, players, playerId, username, i
     const showingPlayer = players.find((p) => p.player_id === showingPid);
     return (
       <div className="max-w-3xl mx-auto p-4 space-y-3">
-        <div className="game-card text-center font-bold">🎬 {showingPlayer?.username || '...'} animációja ({showingIdx + 1}/{playerIds.length})</div>
-        {cur && <div className="game-card p-2"><img src={cur} alt="" className="w-full rounded-lg" /></div>}
+        <div className="game-card ios-glass text-center font-bold animate-slide-up">🎬 {showingPlayer?.username || '...'} animációja ({showingIdx + 1}/{playerIds.length})</div>
+        <div key={showingIdx} className="game-card p-2 bg-white animate-zoom-in" style={{ minHeight: '40vh' }}>
+          {cur ? (
+            <img src={cur} alt="" className="w-full h-auto rounded-lg block max-h-[70vh] object-contain mx-auto" style={{ background: '#fff' }} />
+          ) : (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">Betöltés...</div>
+          )}
+        </div>
         {isHost && (
-          <button className="game-btn-primary w-full" onClick={advanceShow}>Következő ▶️</button>
+          <button className="game-btn-primary w-full" onClick={() => { playWhoosh(); advanceShow(); }}>Következő ▶️</button>
         )}
       </div>
     );
