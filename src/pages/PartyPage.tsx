@@ -10,6 +10,7 @@ import BlindFlightView from '@/components/game/BlindFlightView';
 import AnimationGameView from '@/components/game/AnimationGameView';
 import PresentationGameView from '@/components/game/PresentationGameView';
 import Shooter3DGameView from '@/components/game/Shooter3DGameView';
+import GeoGuesserView from '@/components/game/GeoGuesserView';
 import bannerBg from '@/assets/goryonbanner.jpg';
 import { useState } from 'react';
 import { AVATARS, getAvatarDisplay } from '@/lib/avatars';
@@ -188,7 +189,11 @@ function PartyContent({ code, playerId, username, avatar }: {
               isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
           {game.phase === 'custom-mode' && game.settings.gameMode === 'shooter-3d' && (
-            <Shooter3DGameView players={game.players} playerId={playerId}
+            <Shooter3DGameView code={code} players={game.players} playerId={playerId}
+              isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
+          )}
+          {game.phase === 'custom-mode' && game.settings.gameMode === 'geoguesser' && (
+            <GeoGuesserView code={code} players={game.players} playerId={playerId} username={username}
               isHost={game.isHost} settings={game.settings} onFinish={game.startNewGame} />
           )}
 

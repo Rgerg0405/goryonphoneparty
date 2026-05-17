@@ -3,10 +3,12 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Player, GameSettings } from '@/lib/gameTypes';
-import { playClick, playPop } from '@/lib/sounds';
+import { playClick, playPop, playNotification, playSubmit } from '@/lib/sounds';
 import YouTubeMusicPlayer from './YouTubeMusicPlayer';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Props {
+  code: string;
   players: Player[];
   playerId: string;
   isHost: boolean;
@@ -18,11 +20,14 @@ type Target = { id: string; pos: [number, number, number]; size: number; color: 
 
 const TARGET_COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#f97316', '#7c3aed'];
 
-function makeTargets(count: number): Target[] {
+function makeTargets(count: number, seed = 1): Target[] {
+  // simple seeded rng so all clients see same arrangement
+  let s = seed;
+  const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
   return Array.from({ length: count }, (_, i) => ({
     id: `target-${i}`,
-    pos: [(Math.random() - 0.5) * 16, Math.random() * 4.5 + 1, -Math.random() * 24 - 6],
-    size: Math.random() * 0.55 + 0.45,
+    pos: [(rand() - 0.5) * 16, rand() * 4.5 + 1, -rand() * 24 - 6],
+    size: rand() * 0.55 + 0.45,
     color: TARGET_COLORS[i % TARGET_COLORS.length],
     hit: false,
   }));
@@ -65,14 +70,43 @@ function ShooterScene({ targets, onHit }: { targets: Target[]; onHit: (id: strin
   );
 }
 
-export default function Shooter3DGameView({ players, playerId, isHost, settings, onFinish }: Props) {
+export default function Shooter3DGameView({ code, players, playerId, isHost, settings, onFinish }: Props) {
   const totalTime = settings.shooterTime ?? 90;
   const targetCount = settings.shooterTargets ?? 28;
-  const [targets, setTargets] = useState<Target[]>(() => makeTargets(targetCount));
+  const seed = useMemo(() => {
+    let h = 0;
+    for (const c of code) h = (h * 31 + c.charCodeAt(0)) | 0;
+    return Math.abs(h) || 1;
+  }, [code]);
+  const [targets, setTargets] = useState<Target[]>(() => makeTargets(targetCount, seed));
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(totalTime);
   const [ended, setEnded] = useState(false);
+  const [winner, setWinner] = useState<{ playerId: string; username: string; time: number } | null>(null);
+  const [finishes, setFinishes] = useState<{ playerId: string; username: string; time: number }[]>([]);
+  const channelRef = useRef<any>(null);
+  const startedAtRef = useRef<number>(Date.now());
+  const finishedRef = useRef(false);
   const player = useMemo(() => players.find((p) => p.player_id === playerId), [players, playerId]);
+
+  useEffect(() => {
+    const ch = supabase.channel(`shooter-${code}`);
+    ch.on('broadcast', { event: 'shooter:finish' }, ({ payload }) => {
+      setFinishes((all) => {
+        if (all.find((f) => f.playerId === payload.playerId)) return all;
+        const next = [...all, payload];
+        if (next.length === 1) {
+          setWinner(payload);
+          playNotification();
+        }
+        return next;
+      });
+    });
+    ch.subscribe();
+    channelRef.current = ch;
+    startedAtRef.current = Date.now();
+    return () => { supabase.removeChannel(ch); };
+  }, [code]);
 
   useEffect(() => {
     if (ended) return;
@@ -89,27 +123,63 @@ export default function Shooter3DGameView({ players, playerId, isHost, settings,
   }, [ended, totalTime]);
 
   const hit = (id: string) => {
-    setTargets((all) => all.map((t) => t.id === id ? { ...t, hit: true } : t));
+    setTargets((all) => {
+      const updated = all.map((t) => t.id === id ? { ...t, hit: true } : t);
+      // Check if all hit -> broadcast finish
+      if (!finishedRef.current && updated.every((t) => t.hit)) {
+        finishedRef.current = true;
+        const elapsed = (Date.now() - startedAtRef.current) / 1000;
+        const payload = { playerId, username: player?.username || 'Játékos', time: elapsed };
+        channelRef.current?.send({ type: 'broadcast', event: 'shooter:finish', payload });
+        setFinishes((arr) => arr.find((f) => f.playerId === playerId) ? arr : [...arr, payload]);
+        setWinner((w) => w ?? payload);
+        playSubmit();
+      }
+      return updated;
+    });
     setScore((s) => s + 100);
     playPop();
   };
 
   const reset = () => {
-    setTargets(makeTargets(targetCount));
+    setTargets(makeTargets(targetCount, seed + Date.now()));
     setScore(0);
     setTimeLeft(totalTime);
     setEnded(false);
+    setWinner(null);
+    setFinishes([]);
+    finishedRef.current = false;
+    startedAtRef.current = Date.now();
     playClick();
   };
 
-  if (ended || targets.every((t) => t.hit)) {
+  if (ended || targets.every((t) => t.hit) || winner) {
+    const sorted = [...finishes].sort((a, b) => a.time - b.time);
     return (
       <div className="max-w-xl mx-auto p-4 space-y-4 text-center">
         <h2 className="text-3xl font-bold">🎯 Shooter vége!</h2>
+        {winner && (
+          <div className="game-card space-y-1">
+            <div className="text-5xl animate-bounce">🏆</div>
+            <div className="text-xl font-bold text-primary">{winner.username} nyert!</div>
+            <div className="text-sm text-muted-foreground">{winner.time.toFixed(1)} mp alatt</div>
+          </div>
+        )}
         <div className="game-card space-y-2">
-          <div className="text-6xl">{score}</div>
-          <div className="font-bold text-primary">pont — {player?.username || 'Játékos'}</div>
+          <div className="text-3xl">🎯 {score} pont</div>
+          <div className="text-xs text-muted-foreground">{player?.username || 'Játékos'}</div>
         </div>
+        {sorted.length > 0 && (
+          <div className="game-card text-left text-sm">
+            <div className="font-bold mb-1">🏁 Befejezési sorrend</div>
+            {sorted.map((f, i) => (
+              <div key={f.playerId} className="flex justify-between border-b border-border/40 py-1">
+                <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`} {f.username}</span>
+                <span className="text-muted-foreground">{f.time.toFixed(1)} mp</span>
+              </div>
+            ))}
+          </div>
+        )}
         <button className="game-btn-secondary w-full" onClick={reset}>🔁 Újrapróba</button>
         {isHost && <button className="game-btn-primary w-full" onClick={onFinish}>Vissza a lobbyba</button>}
       </div>
@@ -118,8 +188,9 @@ export default function Shooter3DGameView({ players, playerId, isHost, settings,
 
   return (
     <div className="max-w-6xl mx-auto p-2 md:p-4 space-y-3">
-      <div className="game-card grid grid-cols-3 gap-2 items-center text-center py-2 px-3">
+      <div className="game-card grid grid-cols-4 gap-2 items-center text-center py-2 px-3 text-xs md:text-sm">
         <div className="font-bold">🎯 {score} pont</div>
+        <div className="font-bold">🎪 {targets.filter((t) => !t.hit).length}/{targets.length}</div>
         <div className={`font-bold text-xl ${timeLeft <= 10 ? 'text-destructive animate-pulse' : ''}`}>⏱️ {timeLeft}mp</div>
         <YouTubeMusicPlayer videoId="h-ile9tMNM0" label="Shooter zene" compact />
       </div>
@@ -134,7 +205,7 @@ export default function Shooter3DGameView({ players, playerId, isHost, settings,
         </div>
       </div>
       <div className="game-card text-center text-xs text-muted-foreground py-2">
-        Kattints a 3D nézetbe az egérzárhoz, egérrel célozz, kattintással lőj. Telefonon húzd a nézetet és koppints a célokra.
+        Verseny mód! Aki előbb kilövi mindet, nyer. Kattints a nézetbe az egérzárhoz, célozz, lőj. Telefonon koppints a célokra.
       </div>
     </div>
   );

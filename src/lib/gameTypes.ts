@@ -31,6 +31,9 @@ export interface GameSettings {
   // 3D Shooter
   shooterTime?: number;
   shooterTargets?: number;
+  // GeoGuesser
+  geoRounds?: number;
+  geoTime?: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -52,6 +55,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   presSlideTime: 25,
   shooterTime: 90,
   shooterTargets: 28,
+  geoRounds: 5,
+  geoTime: 90,
 };
 
 export interface GameEntry {
@@ -86,6 +91,7 @@ export const GAME_MODES = [
   { id: 'animation', name: 'ANIMÁCIÓ', description: 'Képkockás GIF, exportálható', icon: '🎬' },
   { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Vicces prezi, közönség reakció', icon: '🎤' },
   { id: 'shooter-3d', name: '3D SHOOTER', description: 'Célbalövős 3D minijáték zenével', icon: '🎯' },
+  { id: 'geoguesser', name: 'GEOGUESSER', description: 'Találd ki hol vagy a térképen!', icon: '🌍' },
 ];
 
 export const TIME_OPTIONS = [

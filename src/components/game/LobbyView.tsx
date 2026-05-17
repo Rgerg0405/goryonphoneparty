@@ -282,6 +282,15 @@ function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
       </div>
     );
   }
+  if (mode === 'geoguesser') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🌍 GeoGuesser beállítások</div>
+        <NumberRow label="Körök" value={settings.geoRounds ?? 5} min={1} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ geoRounds: v })} />
+        <NumberRow label="Kör idő (mp)" value={settings.geoTime ?? 90} min={20} max={180} step={5} disabled={!isHost} onChange={(v) => onUpdateSettings({ geoTime: v })} />
+      </div>
+    );
+  }
   return null;
 }
 
