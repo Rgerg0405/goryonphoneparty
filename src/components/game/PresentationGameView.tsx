@@ -32,6 +32,7 @@ export default function PresentationGameView({ code, players, playerId, username
   const channelRef = useRef<any>(null);
   const notesRef = useRef<Record<string, string[]>>({});
   const gaugeRef = useRef<Record<string, number>>({}); // per-presenter running gauge
+  const titlesRef = useRef<Record<string, string>>({});
 
   const [phase, setPhase] = useState<Phase>('intro');
   const [titles, setTitles] = useState<Record<string, string>>({}); // targetId -> title
@@ -47,6 +48,7 @@ export default function PresentationGameView({ code, players, playerId, username
   const [submittedNotes, setSubmittedNotes] = useState<Set<string>>(new Set());
 
   useEffect(() => { notesRef.current = notes; }, [notes]);
+  useEffect(() => { titlesRef.current = titles; }, [titles]);
 
   const presenter = players[presenterIdx];
   const presenterId = presenter?.player_id;
@@ -65,10 +67,19 @@ export default function PresentationGameView({ code, players, playerId, username
   useEffect(() => {
     const ch = supabase.channel(`pres-${code}`);
     ch.on('broadcast', { event: 'title' }, ({ payload }) => {
-      setTitles((t) => ({ ...t, [payload.targetId]: payload.title }));
+      setTitles((t) => {
+        const updated = { ...t, [payload.targetId]: payload.title };
+        titlesRef.current = updated;
+        if (isHost && Object.keys(updated).length >= players.length) {
+          channelRef.current?.send({ type: 'broadcast', event: 'titles:done', payload: { titles: updated } });
+          setTimeout(() => startPresentation(0, updated), 300);
+        }
+        return updated;
+      });
     });
     ch.on('broadcast', { event: 'titles:done' }, ({ payload }) => {
       setTitles(payload.titles);
+      titlesRef.current = payload.titles;
       setPhase('pres');
     });
     ch.on('broadcast', { event: 'pres:start' }, ({ payload }) => {
@@ -78,6 +89,7 @@ export default function PresentationGameView({ code, players, playerId, username
       setGauge(0);
       setSlides(payload.slides);
       setTitles(payload.titles);
+      titlesRef.current = payload.titles;
       setSlideDeadline(Date.now() + slideTime * 1000);
       const p = players[payload.idx];
       if (p) speakHungarian(`Most ${p.username} prezentál: ${payload.titles[p.player_id] || 'titokzatos téma'}`);
@@ -109,7 +121,7 @@ export default function PresentationGameView({ code, players, playerId, username
       if (payload.idx >= players.length) {
         setPhase('recap');
       } else {
-        if (isHost) startPresentation(payload.idx);
+        if (isHost) startPresentation(payload.idx, titlesRef.current);
       }
     });
     ch.on('broadcast', { event: 'pres:end' }, () => setPhase('recap'));
@@ -152,7 +164,7 @@ export default function PresentationGameView({ code, players, playerId, username
           const got = Object.keys(cur).length;
           if (got >= players.length) {
             channelRef.current?.send({ type: 'broadcast', event: 'titles:done', payload: { titles: cur } });
-            startPresentation(0);
+            startPresentation(0, cur);
           }
           return cur;
         });
@@ -167,19 +179,20 @@ export default function PresentationGameView({ code, players, playerId, username
     players.forEach((p) => { if (!filled[p.player_id]) filled[p.player_id] = '(meglepetés téma)'; });
     setTitles(filled);
     channelRef.current?.send({ type: 'broadcast', event: 'titles:done', payload: { titles: filled } });
-    setTimeout(() => startPresentation(0), 500);
+    titlesRef.current = filled;
+    setTimeout(() => startPresentation(0, filled), 500);
   }
 
-  function startPresentation(idx: number) {
+  function startPresentation(idx: number, sourceTitles = titlesRef.current) {
     const newSlides: Slide[] = Array.from({ length: slidesPerTalk }, () => ({
       emoji: SLIDE_EMOJIS[Math.floor(Math.random() * SLIDE_EMOJIS.length)],
       template: PRES_TEMPLATES[Math.floor(Math.random() * PRES_TEMPLATES.length)],
     }));
     setPresenterIdx(idx); setSlideIdx(0); setSlides(newSlides); setGauge(0); setPhase('pres');
     setSlideDeadline(Date.now() + slideTime * 1000);
-    channelRef.current?.send({ type: 'broadcast', event: 'pres:start', payload: { idx, slides: newSlides, titles } });
+    channelRef.current?.send({ type: 'broadcast', event: 'pres:start', payload: { idx, slides: newSlides, titles: sourceTitles } });
     const p = players[idx];
-    if (p) speakHungarian(`Most ${p.username} prezentál: ${titles[p.player_id] || 'titokzatos téma'}`);
+    if (p) speakHungarian(`Most ${p.username} prezentál: ${sourceTitles[p.player_id] || 'titokzatos téma'}`);
     playNotification();
   }
 
@@ -231,7 +244,7 @@ export default function PresentationGameView({ code, players, playerId, username
       const t = setTimeout(() => {
         channelRef.current?.send({ type: 'broadcast', event: 'pres:next', payload: { idx: next } });
         if (next >= players.length) setPhase('recap');
-        else startPresentation(next);
+        else startPresentation(next, titlesRef.current);
       }, 800);
       return () => clearTimeout(t);
     }
@@ -241,7 +254,7 @@ export default function PresentationGameView({ code, players, playerId, username
     const next = presenterIdx + 1;
     channelRef.current?.send({ type: 'broadcast', event: 'pres:next', payload: { idx: next } });
     if (next >= players.length) setPhase('recap');
-    else startPresentation(next);
+    else startPresentation(next, titlesRef.current);
   }
 
   // ===================== RENDER =====================
