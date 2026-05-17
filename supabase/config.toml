@@ -1,7 +1,1 @@
 project_id = "enriimvbpgjacsjrubux"
-
-[functions.ai-generate-prompts]
-verify_jwt = false
-
-[functions.ai-generate-image]
-verify_jwt = false
