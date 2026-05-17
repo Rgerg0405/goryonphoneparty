@@ -1,13 +1,12 @@
 import goryonLogo from '@/assets/goryonlogo.jpg';
 import FlashCommandoSwitch from './FlashCommandoSwitch';
-import { useLobbyMusic } from '@/hooks/useLobbyMusic';
+import YouTubeMusicPlayer from './YouTubeMusicPlayer';
 
 interface HeaderProps {
   musicActive?: boolean;
 }
 
 export default function Header({ musicActive = true }: HeaderProps) {
-  const { enabled, setEnabled } = useLobbyMusic(musicActive);
   return (
     <header className="relative w-full overflow-hidden">
       {/* Flash Commando Switch */}
@@ -16,13 +15,9 @@ export default function Header({ musicActive = true }: HeaderProps) {
       </div>
 
       {/* Music toggle */}
-      <button
-        onClick={() => setEnabled(!enabled)}
-        title={enabled ? 'Zene némítása' : 'Zene bekapcsolása'}
-        className="absolute top-3 right-32 z-20 game-btn-secondary text-sm py-1 px-3"
-      >
-        {enabled ? '🎵 Zene BE' : '🔇 Zene KI'}
-      </button>
+      <div className="absolute top-3 right-32 z-20">
+        <YouTubeMusicPlayer videoId="9a6gQtlCzyY" label="Lobby zene" active={musicActive} />
+      </div>
 
       {/* YouTube link */}
       <a
