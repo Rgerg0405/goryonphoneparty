@@ -75,9 +75,10 @@ interface Props {
   onSubmit: (dataUrl: string) => void;
   isSecret?: boolean;
   disabled?: boolean;
+  allowImageImport?: boolean;
 }
 
-export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
+export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport }: Props) {
   const composedRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
   const [layers, setLayers] = useState<Layer[]>(() => {
@@ -567,6 +568,34 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
     playClick();
   };
 
+  // ===== Image import (új réteg) =====
+  const importImageFromFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const layer = makeLayer(`Kép ${layers.length}`);
+        const ctx = layer.canvas.getContext('2d')!;
+        const scale = Math.min((CANVAS_W * 0.7) / img.width, (CANVAS_H * 0.7) / img.height, 1);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (CANVAS_W - w) / 2, (CANVAS_H - h) / 2, w, h);
+        setLayers((s) => [...s, layer]);
+        setActiveLayerId(layer.id);
+        setTimeout(compose, 0);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) importImageFromFile(f);
+    e.target.value = '';
+    playClick();
+  };
+
   // ===== input handlers =====
   const SHAPE_TOOLS: Tool[] = ['line', 'rect', 'circle', 'triangle', 'star', 'arrow', 'polygon'];
 
@@ -738,6 +767,13 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
               <span className="font-bold text-sm">📚 Rétegek</span>
               <button type="button" className="text-xs py-1 px-2 rounded border-2 border-border bg-card font-bold" onClick={addLayer}>+ Új</button>
             </div>
+            {allowImageImport && (
+              <label className="block mt-1 mb-2">
+                <span className="text-[11px] text-muted-foreground mb-1 block">🖼️ Importálj egy képet új rétegként:</span>
+                <input type="file" accept="image/*" onChange={handleImageInput}
+                  className="text-xs w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-primary file:text-primary-foreground file:font-bold cursor-pointer" />
+              </label>
+            )}
             <div className="space-y-1">
               {[...layers].reverse().map((l) => (
                 <div key={l.id} className={`flex items-center gap-1 p-1 rounded border-2 ${activeLayerId === l.id ? 'border-primary bg-primary/10' : 'border-border bg-card'}`}>

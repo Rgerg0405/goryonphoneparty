@@ -13,6 +13,7 @@ export interface GameSettings {
   describeTime: number;
   gameMode: string;
   maxPlayers: number;
+  allowImageImport?: boolean;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   describeTime: 30,
   gameMode: 'normal',
   maxPlayers: 14,
+  allowImageImport: false,
 };
 
 export interface GameEntry {
@@ -49,16 +51,11 @@ export type GamePhase = 'lobby' | 'writing' | 'drawing' | 'describing' | 'album'
 export const GAME_MODES = [
   { id: 'normal', name: 'NORMÁL', description: 'Klasszikus rajzolás és leírás', icon: '✏️' },
   { id: 'secret', name: 'TITOK', description: 'Nem látod mit rajzolsz!', icon: '🔒' },
-  { id: 'animation', name: 'ANIMÁCIÓ', description: 'Mozgó GIF rajzolása', icon: '🎬' },
-  { id: 'icebreaker', name: 'JÉGTÖRŐ', description: 'Kérdésekre rajzolj', icon: '🧊' },
-  { id: 'knockoff', name: 'UTÁNZÁS', description: 'Másold le a rajzot', icon: '🖌️' },
-  { id: 'complement', name: 'KIEGÉSZÍTÉS', description: 'Egészítsd ki a rajzot', icon: '🧩' },
-  { id: 'masterpiece', name: 'MESTERMŰ', description: 'Egy kép, több művész', icon: '🖼️' },
-  { id: 'story', name: 'TÖRTÉNET', description: 'Közös történet', icon: '📖' },
-  { id: 'missing', name: 'HIÁNYZÓ DARAB', description: 'Találd meg a hiányzó részt', icon: '🔍' },
-  { id: 'ai-prompt', name: 'AI PROMPT', description: 'AI generálja a kezdő mondatokat', icon: '🤖' },
-  { id: 'ai-image', name: 'AI KÉP', description: 'AI hyperrealisztikus képet generál', icon: '🪄' },
   { id: 'modeling-3d', name: '3D MODELL', description: 'Rajz helyett 3D modellt építs', icon: '🧊' },
+  { id: 'scribble', name: 'SCRIBBLE', description: 'Hamarosan – tippelős rajz', icon: '✍️', soon: true },
+  { id: 'blind-flight', name: 'VAKREPÜLÉS', description: 'Hamarosan – sötétben rajzolsz', icon: '🌑', soon: true },
+  { id: 'animation', name: 'ANIMÁCIÓ', description: 'Hamarosan – képkockás GIF', icon: '🎬', soon: true },
+  { id: 'presentation', name: 'PREZENTÁCIÓ', description: 'Hamarosan – vicces prezi', icon: '🎤', soon: true },
 ];
 
 export const TIME_OPTIONS = [

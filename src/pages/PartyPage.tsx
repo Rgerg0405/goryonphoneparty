@@ -134,7 +134,7 @@ function PartyContent({ code, playerId, username, avatar }: {
       }}
     >
       <div className="min-h-screen flex flex-col" style={{ background: 'hsla(48, 100%, 50%, 0.88)' }}>
-        <Header />
+        <Header musicActive={game.phase === 'lobby'} />
 
         <main className="flex-1 pb-20">
           {game.phase === 'lobby' && (
@@ -161,6 +161,7 @@ function PartyContent({ code, playerId, username, avatar }: {
               isHost={game.isHost}
               isSecret={isSecret}
               gameMode={game.settings.gameMode}
+              allowImageImport={game.settings.allowImageImport}
               onSubmit={game.submitEntry}
             />
           )}

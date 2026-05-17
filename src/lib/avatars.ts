@@ -28,14 +28,6 @@ export const AVATARS: AvatarOption[] = [
   { id: 'shrek', src: shrek, name: 'Shrek' },
   { id: 'krisz', src: krisz, name: 'Krisz' },
   { id: 'orr', src: orr, name: 'Orr' },
-  { id: 'alien', src: '', name: '👽' },
-  { id: 'robot', src: '', name: '🤖' },
-  { id: 'ghost', src: '', name: '👻' },
-  { id: 'clown', src: '', name: '🤡' },
-  { id: 'skull', src: '', name: '💀' },
-  { id: 'dragon', src: '', name: '🐉' },
-  { id: 'fire', src: '', name: '🔥' },
-  { id: 'star', src: '', name: '⭐' },
 ];
 
 export function getAvatarDisplay(avatarId: string): { src?: string; emoji?: string } {

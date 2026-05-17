@@ -80,7 +80,7 @@ export default function AlbumView({
               <div className="flex items-center gap-2 mb-4">
                 {(() => {
                   const player = players.find((p) => p.player_id === currentEntry.player_id);
-                  const av = getAvatarDisplay(player?.avatar || 'alien');
+                  const av = getAvatarDisplay(player?.avatar || 'goryon');
                   return (
                     <>
                       {av.src ? (
@@ -182,7 +182,7 @@ export default function AlbumView({
         <div className="flex flex-col gap-2">
           {playerOrder.map((pid, i) => {
             const player = players.find((p) => p.player_id === pid);
-            const av = getAvatarDisplay(player?.avatar || 'alien');
+            const av = getAvatarDisplay(player?.avatar || 'goryon');
             const isChainStarter = i === slide.chain;
             return (
               <div

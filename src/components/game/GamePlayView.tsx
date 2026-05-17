@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GamePhase, getPhaseLabel } from '@/lib/gameTypes';
 import DrawingCanvas from './DrawingCanvas';
-import AIImageView from './AIImageView';
 import ThreeDEditor from './ThreeDEditor';
 import WaitingVideoPlayer from './WaitingVideoPlayer';
 import { playClick } from '@/lib/sounds';
@@ -18,12 +17,13 @@ interface Props {
   isHost: boolean;
   isSecret: boolean;
   gameMode: string;
+  allowImageImport?: boolean;
   onSubmit: (content: string) => void;
 }
 
 export default function GamePlayView({
   phase, step, totalSteps, currentContent, timeRemaining,
-  hasSubmitted, submittedCount, totalPlayers, isHost, isSecret, gameMode, onSubmit,
+  hasSubmitted, submittedCount, totalPlayers, isHost, isSecret, gameMode, allowImageImport, onSubmit,
 }: Props) {
   const [text, setText] = useState('');
 
@@ -138,17 +138,15 @@ export default function GamePlayView({
           {currentContent && (
             <div className="game-card mb-3 text-center">
               <p className="text-sm font-bold text-muted-foreground mb-1">
-                {gameMode === 'ai-image' ? 'Az AI rajzolja le ezt:' : gameMode === 'modeling-3d' ? 'Építsd meg 3D-ben:' : 'Rajzold le ezt:'}
+                {gameMode === 'modeling-3d' ? 'Építsd meg 3D-ben:' : 'Rajzold le ezt:'}
               </p>
               <p className="text-xl font-bold">"{currentContent}"</p>
             </div>
           )}
-          {gameMode === 'ai-image' ? (
-            <AIImageView prompt={currentContent || ''} onSubmit={handleDrawSubmit} />
-          ) : gameMode === 'modeling-3d' ? (
+          {gameMode === 'modeling-3d' ? (
             <ThreeDEditor onSubmit={handleDrawSubmit} />
           ) : (
-            <DrawingCanvas onSubmit={handleDrawSubmit} isSecret={isSecret} />
+            <DrawingCanvas onSubmit={handleDrawSubmit} isSecret={isSecret} allowImageImport={allowImageImport} />
           )}
         </div>
       ) : null}
