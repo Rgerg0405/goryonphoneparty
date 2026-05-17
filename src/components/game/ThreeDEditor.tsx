@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Grid, TransformControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -42,14 +42,6 @@ const SHAPE_BUTTONS: { id: ShapeKind; icon: string; label: string }[] = [
 
 const COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#7c3aed', '#000000', '#ffffff', '#f97316'];
 
-function makeTextureFromImage(url: string): THREE.Texture {
-  const loader = new THREE.TextureLoader();
-  const t = loader.load(url);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.needsUpdate = true;
-  return t;
-}
-
 function ShapeMesh({
   shape, selected, onPick, registerRef, draggingRef,
 }: {
@@ -66,7 +58,19 @@ function ShapeMesh({
     return () => registerRef(shape.id, null);
   });
 
-  const texture = useMemo(() => (shape.textureUrl ? makeTextureFromImage(shape.textureUrl) : null), [shape.textureUrl]);
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    if (!shape.textureUrl) { setTexture(null); return; }
+    const loader = new THREE.TextureLoader();
+    const tex = loader.load(shape.textureUrl, (loaded) => {
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      loaded.needsUpdate = true;
+      setTexture(loaded);
+    });
+    tex.colorSpace = THREE.SRGBColorSpace;
+    setTexture(tex);
+    return () => { tex.dispose(); };
+  }, [shape.textureUrl]);
 
   // Use onClick (pointerup with no drag) instead of onPointerDown so that
   // dragging the TransformControls gizmo over a background mesh does NOT
@@ -75,7 +79,7 @@ function ShapeMesh({
     if (draggingRef.current) return;
     e.stopPropagation();
     const native = e.nativeEvent as MouseEvent;
-    onPick(native.shiftKey);
+    onPick(native.shiftKey || native.ctrlKey || native.metaKey);
   };
   // Note: raycast disabling during drag is handled centrally via draggingRef;
   // onClick won't fire if the gizmo absorbed the drag.
