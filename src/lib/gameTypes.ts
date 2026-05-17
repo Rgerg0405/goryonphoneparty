@@ -110,8 +110,8 @@ export const GAME_MODES = [
   { id: 'geoguesser', name: 'GEOGUESSER', description: 'Találd ki hol vagy a térképen!', icon: '🌍' },
   { id: 'music-quiz', name: 'ZENEKITALÁLÓ', description: 'Halld a részletet, tippeld meg!', icon: '🎵' },
   { id: 'slither', name: 'KUKAC', description: 'Slither.io stílusú multiplayer', icon: '🐍' },
-  { id: 'f1-race', name: 'F1 VERSENY', description: 'Tervezd az autód, majd verseny! (hamarosan)', icon: '🏎️', soon: true } as any,
-  { id: 'mc-pvp', name: 'KARD PVP', description: 'Karddal és aranyalmával harc (hamarosan)', icon: '⚔️', soon: true } as any,
+  { id: 'f1-race', name: 'F1 VERSENY', description: 'Tervezd az autód, majd verseny WASD-vel!', icon: '🏎️' },
+  { id: 'mc-pvp', name: 'KARD PVP', description: 'Karddal és aranyalmával FPS harc', icon: '⚔️' },
 ];
 
 export const TIME_OPTIONS = [

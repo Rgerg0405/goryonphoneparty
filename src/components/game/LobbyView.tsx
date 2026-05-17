@@ -320,6 +320,25 @@ function ModeSpecificSettings({ settings, isHost, onUpdateSettings }: {
       </div>
     );
   }
+  if (mode === 'f1-race') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">🏎️ F1 verseny beállítások</div>
+        <NumberRow label="Körök száma" value={settings.f1Laps ?? 3} min={1} max={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ f1Laps: v })} />
+        <NumberRow label="Tervezési idő (mp)" value={settings.f1DesignTime ?? 90} min={30} max={300} step={10} disabled={!isHost} onChange={(v) => onUpdateSettings({ f1DesignTime: v })} />
+        <p className="text-[10px] text-muted-foreground">3D modellezővel autót tervezel, majd WASD verseny.</p>
+      </div>
+    );
+  }
+  if (mode === 'mc-pvp') {
+    return (
+      <div className="border-t-2 border-border/40 pt-3 space-y-2">
+        <div className="font-bold text-xs">⚔️ Kard PVP beállítások</div>
+        <NumberRow label="Max játékidő (mp)" value={settings.pvpDuration ?? 180} min={60} max={600} step={30} disabled={!isHost} onChange={(v) => onUpdateSettings({ pvpDuration: v })} />
+        <p className="text-[10px] text-muted-foreground">FPS arena. WASD, SPACE ugrás, LMB kard, E aranyalma. Az utolsó talpon maradó nyer.</p>
+      </div>
+    );
+  }
   return null;
 }
 
