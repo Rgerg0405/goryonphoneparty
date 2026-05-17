@@ -408,11 +408,11 @@ function latLngToPct(lat: number, lng: number) {
   return { x: ((lng + 180) / 360) * 100, y: ((90 - lat) / 180) * 100 };
 }
 
-function MarkerPin({ lat, lng, color, label }: { lat: number; lng: number; color: string; label: string }) {
+function MarkerPin({ lat, lng, color, label, scale = 1 }: { lat: number; lng: number; color: string; label: string; scale?: number }) {
   const p = latLngToPct(lat, lng);
   return (
     <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center" style={{ transform: `scale(${scale})`, transformOrigin: 'bottom center' }}>
         <div className="text-[10px] font-bold px-1 rounded bg-background/80 border border-border whitespace-nowrap mb-0.5">{label}</div>
         <div className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ backgroundColor: color }} />
       </div>
