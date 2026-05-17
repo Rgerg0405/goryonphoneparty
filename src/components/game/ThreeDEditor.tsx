@@ -743,6 +743,21 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
           </div>
         </div>
 
+        <div>
+          <div className="font-bold text-sm mb-2">📚 Sablonok</div>
+          <div className="grid grid-cols-2 gap-2 max-h-[280px] overflow-y-auto pr-1">
+            {TEMPLATES.map((t) => (
+              <button key={t.id} type="button"
+                className="game-btn bg-card text-xs py-3 px-2 hover-glow flex flex-col items-center gap-1"
+                onClick={() => addTemplate(t)}>
+                <span className="text-2xl">{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">Egy sablon = egy kész csoport, együtt mozog.</p>
+        </div>
+
         {selected ? (
           <div className="space-y-3 border-t-2 border-border pt-3">
             <div className="font-bold text-sm">
