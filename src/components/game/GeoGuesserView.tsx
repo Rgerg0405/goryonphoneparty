@@ -203,8 +203,10 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
     playClick();
   };
 
+  // Google Maps Street View embed (no API key needed).
+  // The `svembed` output renders the actual Street View panorama for the given coordinates.
   const streetViewSrc = loc
-    ? `https://www.google.com/maps?q=&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,0,0,0,0&output=embed`
+    ? `https://maps.google.com/maps?q&layer=c&cbll=${loc.lat},${loc.lng}&cbp=11,${Math.floor(Math.random()*360)},0,0,0&output=svembed`
     : '';
 
   const sortedScores = useMemo(() => (
@@ -254,7 +256,9 @@ export default function GeoGuesserView({ code, players, playerId, username, isHo
                 title="Street view"
                 src={streetViewSrc}
                 className="w-full h-full border-0"
-                allow="accelerometer; gyroscope"
+                allow="accelerometer; gyroscope; fullscreen"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
               />
             )}
           </div>
