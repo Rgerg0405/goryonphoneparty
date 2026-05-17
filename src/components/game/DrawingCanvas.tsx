@@ -1095,7 +1095,9 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
             <button className="game-btn bg-card py-1 px-3" onClick={redo} disabled={redoStack.length === 0}>↪️ Előre</button>
             <button className="game-btn bg-card py-1 px-3" onClick={clearActive}>🗑️ Réteg törlése</button>
             <div className="flex-1" />
-            <button className="game-btn-primary py-1 px-4" onClick={handleSubmit} disabled={disabled}>✅ KÉSZ!</button>
+            {!hideSubmit && (
+              <button className="game-btn-primary py-1 px-4" onClick={handleSubmit} disabled={disabled}>✅ KÉSZ!</button>
+            )}
           </div>
 
           <div className="overflow-auto rounded-xl border border-border bg-card/50 max-h-[70vh]">
@@ -1152,6 +1154,9 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
                     </div>
                   );
                 })}
+                {darknessOverlay && darknessOverlay > 0 && (
+                  <div style={{ position: 'absolute', inset: 0, background: '#000', opacity: darknessOverlay, pointerEvents: 'none', borderRadius: 8 }} />
+                )}
               </div>
             </div>
           </div>
