@@ -21,7 +21,7 @@ const TARGET_COLORS = ['#ff4d6d', '#ffd166', '#06d6a0', '#118ab2', '#f97316', '#
 function makeTargets(count: number): Target[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `target-${i}`,
-    pos: [(Math.random() - 0.5) * 28, Math.random() * 5 + 1, -Math.random() * 30 - 6],
+    pos: [(Math.random() - 0.5) * 16, Math.random() * 4.5 + 1, -Math.random() * 24 - 6],
     size: Math.random() * 0.55 + 0.45,
     color: TARGET_COLORS[i % TARGET_COLORS.length],
     hit: false,
@@ -128,7 +128,7 @@ export default function Shooter3DGameView({ players, playerId, isHost, settings,
           <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary" />
         </div>
         <div className="rounded-xl overflow-hidden h-[68vh] min-h-[420px] bg-card">
-          <Canvas camera={{ position: [0, 2.2, 4], fov: 70 }} shadows>
+          <Canvas camera={{ position: [0, 2.2, 4], fov: 82 }} shadows>
             <ShooterScene targets={targets} onHit={hit} />
           </Canvas>
         </div>
