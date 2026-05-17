@@ -75,9 +75,10 @@ interface Props {
   onSubmit: (dataUrl: string) => void;
   isSecret?: boolean;
   disabled?: boolean;
+  allowImageImport?: boolean;
 }
 
-export default function DrawingCanvas({ onSubmit, isSecret, disabled }: Props) {
+export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImageImport }: Props) {
   const composedRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null); // floating preview for shape drag
   const [layers, setLayers] = useState<Layer[]>(() => {
