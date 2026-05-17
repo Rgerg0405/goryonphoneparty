@@ -682,15 +682,17 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
               sceneRef.current = scene;
               cameraRef.current = camera;
             }}
-            onPointerMissed={() => { if (!draggingRef.current) setSelectedId(null); }}
+            onPointerMissed={() => { if (!draggingRef.current) setSelectedIds([]); }}
           >
             <SceneContent
               shapes={shapes}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               mode={mode}
-              setSelectedId={setSelectedId}
+              onPickShape={handlePickShape}
               registerRef={registerRef}
-              onTransform={onTransformChange}
+              onTransformStart={onTransformStart}
+              onTransformDelta={onTransformDelta}
+              onTransformEnd={onTransformEnd}
               orbitRef={orbitRef}
               transformAttach={transformAttach}
               draggingRef={draggingRef}
@@ -699,7 +701,7 @@ export default function ThreeDEditor({ onSubmit, disabled }: Props) {
         </div>
 
         <div className="flex justify-center gap-2 mt-3 flex-wrap">
-          <button type="button" className="game-btn bg-card text-sm py-2 px-3" onClick={() => { setShapes([]); setSelectedId(null); }}>
+          <button type="button" className="game-btn bg-card text-sm py-2 px-3" onClick={() => { setShapes([]); setSelectedIds([]); }}>
             🗑️ Üres
           </button>
           <button type="button" className="game-btn bg-card text-sm py-2 px-3" onClick={exportGLB} disabled={shapes.length === 0}>
