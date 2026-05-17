@@ -125,7 +125,10 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
   const [tool, setTool] = useState<Tool>('brush');
   const [color, setColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(6);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(() => {
+    if (typeof window === 'undefined') return 1;
+    return window.innerWidth < 768 ? 0.45 : 1;
+  });
   const [symmetry, setSymmetry] = useState<'off' | 'h' | 'v' | 'both'>('off');
   const [undoStack, setUndoStack] = useState<{ layerId: string; data: ImageData }[]>([]);
   const [redoStack, setRedoStack] = useState<{ layerId: string; data: ImageData }[]>([]);
@@ -1099,7 +1102,7 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
               <span className="font-bold text-sm">Zoom</span>
               <span className="text-xs text-primary font-bold">{Math.round(zoom * 100)}%</span>
             </div>
-            <input type="range" min={0.5} max={3} step={0.05} value={zoom}
+            <input type="range" min={0.4} max={3} step={0.05} value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))} className="w-full" />
           </div>
         </div>
