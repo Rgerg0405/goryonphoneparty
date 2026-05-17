@@ -26,7 +26,7 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
   return (
     <div className="flex flex-col lg:flex-row gap-4 p-4 max-w-7xl mx-auto w-full">
       {/* Players panel */}
-      <div className="game-card lg:w-80 flex-shrink-0">
+      <div className="game-card ios-glass lg:w-80 flex-shrink-0">
         <h2 className="text-xl font-bold mb-3 text-center">
           🎮 JÁTÉKOSOK {players.length}/{maxSlots}
         </h2>
@@ -61,7 +61,7 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
       </div>
 
       {/* Center - Game modes */}
-      <div className="game-card flex-1">
+      <div className="game-card ios-glass flex-1">
         <h2 className="text-xl font-bold mb-3 text-center">🎲 JÁTÉKMÓDOK</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
           {GAME_MODES.map((mode: any) => (
@@ -86,7 +86,7 @@ export default function LobbyView({ players, settings, isHost, partyCode, onStar
       </div>
 
       {/* Right - Settings */}
-      <div className="game-card lg:w-72 flex-shrink-0">
+      <div className="game-card ios-glass lg:w-72 flex-shrink-0">
         <h2 className="text-xl font-bold mb-3 text-center">⚙️ BEÁLLÍTÁSOK</h2>
 
         <div className="flex flex-col gap-4">

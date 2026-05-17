@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Player, GameSettings, speakHungarian } from '@/lib/gameTypes';
-import { playClick, playNotification, playPop } from '@/lib/sounds';
+import { playClick, playNotification, playPop, playWhoosh, playApplause, playSlideChange, fireConfetti } from '@/lib/sounds';
 
 interface Props {
   code: string; players: Player[]; playerId: string; username: string;
@@ -93,13 +93,13 @@ export default function PresentationGameView({ code, players, playerId, username
       setSlideDeadline(Date.now() + slideTime * 1000);
       const p = players[payload.idx];
       if (p) speakHungarian(`Most ${p.username} prezentál: ${payload.titles[p.player_id] || 'titokzatos téma'}`);
-      playNotification();
+      playNotification(); playWhoosh();
     });
     ch.on('broadcast', { event: 'pres:slide' }, ({ payload }) => {
       setSlideIdx(payload.idx);
       setGauge(0);
       setSlideDeadline(Date.now() + slideTime * 1000);
-      playClick();
+      playSlideChange();
     });
     ch.on('broadcast', { event: 'react' }, ({ payload }) => {
       setGauge((g) => Math.max(-20, Math.min(20, g + payload.delta)));
@@ -243,7 +243,7 @@ export default function PresentationGameView({ code, players, playerId, username
       const next = presenterIdx + 1;
       const t = setTimeout(() => {
         channelRef.current?.send({ type: 'broadcast', event: 'pres:next', payload: { idx: next } });
-        if (next >= players.length) setPhase('recap');
+        if (next >= players.length) { setPhase('recap'); fireConfetti(80); playApplause(); }
         else startPresentation(next, titlesRef.current);
       }, 800);
       return () => clearTimeout(t);
@@ -298,20 +298,29 @@ export default function PresentationGameView({ code, players, playerId, username
 
   if (phase === 'pres') {
     const slide = slides[slideIdx];
+    const bgGradients = [
+      'linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)',
+      'linear-gradient(135deg, #48dbfb 0%, #1dd1a1 100%)',
+      'linear-gradient(135deg, #5f27cd 0%, #ee5253 100%)',
+      'linear-gradient(135deg, #00d2d3 0%, #54a0ff 100%)',
+      'linear-gradient(135deg, #feca57 0%, #ff9ff3 100%)',
+      'linear-gradient(135deg, #1dd1a1 0%, #5f27cd 100%)',
+    ];
+    const bg = bgGradients[slideIdx % bgGradients.length];
     return (
       <div className="max-w-4xl mx-auto p-4 space-y-3">
-        <div className="game-card text-center">
+        <div className="game-card ios-glass text-center animate-slide-up">
           <p className="text-xs text-muted-foreground">{presenter?.username} prezentál — slide {slideIdx + 1}/{slidesPerTalk}</p>
           <p className="text-3xl font-bold">"{presentedTitle}"</p>
           <p className={`text-sm font-bold ${slideTimeLeft <= 5 ? 'text-destructive animate-pulse' : 'text-muted-foreground'}`}>⏱️ {slideTimeLeft}mp</p>
         </div>
         {slide && (
-          <div className="game-card text-center py-12 space-y-4">
-            <div className="text-9xl">{slide.emoji}</div>
-            <div className="text-3xl font-bold">{slide.template}</div>
+          <div key={slideIdx} className="rounded-2xl text-center py-10 md:py-16 px-4 space-y-4 animate-blur-in shadow-2xl" style={{ background: bg, color: '#fff', minHeight: '40vh' }}>
+            <div className="text-7xl md:text-9xl animate-spring-in drop-shadow-lg">{slide.emoji}</div>
+            <div className="text-2xl md:text-4xl font-bold drop-shadow-lg" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>{slide.template}</div>
           </div>
         )}
-        <div className="game-card flex items-center justify-between py-3 px-4">
+        <div className="game-card ios-glass flex items-center justify-between py-3 px-4">
           <button className="game-btn bg-card text-3xl px-4" onClick={() => react(-1)} disabled={isPresenter}>👎</button>
           <div className="flex-1 mx-3 h-4 bg-muted rounded-full overflow-hidden relative border border-border">
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-foreground/40" />
@@ -324,7 +333,7 @@ export default function PresentationGameView({ code, players, playerId, username
           <button className="game-btn bg-card text-3xl px-4" onClick={() => react(1)} disabled={isPresenter}>👍</button>
         </div>
         {isPresenter ? (
-          <button className="game-btn-primary w-full" onClick={nextSlide}>Következő slide ▶️</button>
+          <button className="game-btn-primary w-full" onClick={() => { playWhoosh(); nextSlide(); }}>Következő slide ▶️</button>
         ) : (
           <div className="game-card text-center text-xs text-muted-foreground">Te a közönségben vagy. Reagálj a gombokkal!</div>
         )}
@@ -361,8 +370,8 @@ export default function PresentationGameView({ code, players, playerId, username
 
   // recap / end
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-3">
-      <h2 className="text-3xl font-bold text-center">🎤 Prezentációk vége!</h2>
+    <div className="max-w-2xl mx-auto p-4 space-y-3 animate-zoom-in">
+      <h2 className="text-3xl font-bold text-center animate-spring-in">🎤 Prezentációk vége!</h2>
       <div className="game-card space-y-3">
         {players.map((p) => (
           <div key={p.player_id} className="border-b border-border pb-2">
