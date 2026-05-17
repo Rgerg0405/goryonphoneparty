@@ -702,8 +702,7 @@ export default function DrawingCanvas({ onSubmit, isSecret, disabled, allowImage
       // decode all frames using ImageDecoder if available, fallback to single frame
       try {
         const buf = await (await fetch(url)).arrayBuffer();
-        // @ts-expect-error experimental
-        const dec = new ImageDecoder({ data: buf, type: 'image/gif' });
+        const dec = new (window as any).ImageDecoder({ data: buf, type: 'image/gif' });
         await dec.tracks.ready;
         const track = dec.tracks.selectedTrack;
         const total = track?.frameCount || 1;
